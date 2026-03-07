@@ -1,30 +1,20 @@
-import pkg from "pg";
+import { PrismaClient } from "@prisma/client";
+import { PrismaNeon } from "@prisma/adapter-neon";
 import dotenv from "dotenv";
 
-dotenv.config()
+dotenv.config();
 
-const { Pool } = pkg
-
-const pool = new Pool({
-    connectionString: process.env.DB_URL,
-    ssl: true,
-})
+const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL });
+const prisma = new PrismaClient({ adapter });
 
 export const testConnection = async () => {
     try {
-        const client = await pool.connect();
+        const time = await prisma.$queryRaw`SELECT NOW()`;
         console.log("✅ Database Connected Successfully");
-        client.release();
+        console.log("Current Time:", time[0].now);
     } catch (err) {
         console.error("❌ Database Connection Failed:", err.message);
     }
-
-    try {
-        const result = await pool.query("SELECT NOW()");
-        console.log("✅ DB Time:", result.rows[0].now);
-    } catch (err) {
-        console.error("❌ Query Failed:", err.message);
-    }
 };
 
-export default pool
+export default prisma;
