@@ -1,0 +1,61 @@
+1. users
+2. products
+3. customers
+4. vendors
+
+5. purchases
+6. purchase_items
+
+7. sales
+8. sales_items
+
+9. bom
+10. bom_items
+
+11. production
+
+12. expenses
+
+13. inventory_transactions (optional but recommended)
+
+
+Explanation (why these exist)
+
+# Core tables
+
+users → login + roles
+
+products → raw materials and finished goods
+
+customers → sales customers
+
+vendors → suppliers
+
+#Purchase module
+
+purchases → purchase invoice header
+
+purchase_items → products inside that purchase
+
+# Sales module
+
+sales → sales invoice header
+
+sales_items → items sold in the invoice
+
+# Production module
+
+bom → finished product recipe
+
+bom_items → raw materials required
+
+production → manufacturing record
+
+# Finance
+
+expenses → manual expenses
+
+# Inventory
+
+inventory_transactions → history of stock movement
+(purchase, sale, production, adjustment)
