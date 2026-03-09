@@ -34,3 +34,22 @@ model User {
 
   @@map("users")
 }
+
+enum ProductCategory {
+  raw
+  wip
+  finished
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  name        String
+  price       Float
+  category    ProductCategory
+  quantity    Int
+  restockLevel       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@map("products")
+}
