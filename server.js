@@ -10,14 +10,20 @@ const PORT = process.env.PORT || 5000;
 await testConnection();
 
 // Insert (upsert to avoid duplicate email error on restart)
-const user = await prisma.users.upsert({
+const user = await prisma.user.upsert({
     where: { email: "test@example.com" },
     update: {},
-    create: { name: "Prasant", email: "test@example.com" },
+    create: {
+        name: "Prasant",
+        employeeId: "abc21",
+        email: "test@example.com",
+        passwordHash: "temporary-hash",
+        role: "ADMIN",
+    },
 });
 
 // Select
-const users = await prisma.users.findMany();
+const users = await prisma.user.findMany();
 
 console.log(users);
 
