@@ -1,84 +1,122 @@
 import prisma from "../../../config/db.js";
+import { ApiResponse, ApiError } from "../../../utils/response.js";
 
-export const addProduct = async (req, res) => {
+const VALID_CATEGORIES = ["raw", "wip", "finished"];
+
+export const addProduct = async (req, res, next) => {
     try {
         const { name, price, description, category } = req.body;
 
-        if (!name || !price || !category) {
-            return res.status(400).json({ error: "name, price and category are required" });
+        if (!name || typeof name !== "string" || name.trim() === "") {
+            throw new ApiError(400, "Product name is required");
         }
-        
-        if (price <= 0) {
-            return res.status(400).json({ error: "Price must be a positive value" });
+
+        if (!category) throw new ApiError(400, "Category is required");
+        if (!VALID_CATEGORIES.includes(category)) {
+            throw new ApiError(400, `Category must be one of: ${VALID_CATEGORIES.join(", ")}`);
+        }
+
+        if (price == null) throw new ApiError(400, "Price is required");
+        if (typeof price !== "number" || price <= 0) {
+            throw new ApiError(400, "Price must be a positive number");
         }
 
         const data = await prisma.product.create({
-            data: { name, description, category, price },
+            data: { name: name.trim(), description: description || null, category, price },
         });
 
-        return res.status(201).json({ data, message: "Product added successfully" });
+        return res.status(201).json(new ApiResponse(201, "Product added successfully", data));
     } catch (err) {
-        return res.status(500).json({ error: err.message });
+        next(err);
     }
 };
 
-export const getProducts = async (req, res) => {
+export const getProducts = async (req, res, next) => {
     try {
         const { category } = req.query;
+
+        if (category && !VALID_CATEGORIES.includes(category)) {
+            throw new ApiError(400, `Category must be one of: ${VALID_CATEGORIES.join(", ")}`);
+        }
+
         const data = await prisma.product.findMany({
             where: category ? { category } : undefined,
             orderBy: { createdAt: "desc" },
         });
-        return res.status(200).json({ data, message: "Products retrieved successfully" });
+
+        return res.status(200).json(new ApiResponse(200, "Products retrieved successfully", data));
     } catch (err) {
-        return res.status(500).json({ error: err.message });
+        next(err);
     }
 };
 
-export const getProduct = async (req, res) => {
+export const getProduct = async (req, res, next) => {
     try {
         const id = parseInt(req.params.id);
+
+        if (isNaN(id)) throw new ApiError(400, "Invalid product ID");
+
         const data = await prisma.product.findUnique({ where: { id } });
-        if (!data) return res.status(404).json({ error: "Product not found" });
-        return res.status(200).json({ data, message: "Product retrieved successfully" });
+        if (!data) throw new ApiError(404, "Product not found");
+
+        return res.status(200).json(new ApiResponse(200, "Product retrieved successfully", data));
     } catch (err) {
-        return res.status(500).json({ error: err.message });
+        next(err);
     }
 };
 
-export const editProduct = async (req, res) => {
+export const editProduct = async (req, res, next) => {
     try {
         const id = parseInt(req.params.id);
-        const { name, description, category, price } = req.body;
+
+        if (isNaN(id)) throw new ApiError(400, "Invalid product ID");
 
         const existing = await prisma.product.findUnique({ where: { id } });
-        if (!existing) return res.status(404).json({ error: "Product not found" });
+        if (!existing) throw new ApiError(404, "Product not found");
 
-        if (price !== undefined && price <= 0) {
-            return res.status(400).json({ error: "Price must be a positive value" });
+        const { name, description, category, price } = req.body;
+
+        if (name !== undefined && (typeof name !== "string" || name.trim() === "")) {
+            throw new ApiError(400, "Product name cannot be empty");
+        }
+
+        if (category !== undefined && !VALID_CATEGORIES.includes(category)) {
+            throw new ApiError(400, `Category must be one of: ${VALID_CATEGORIES.join(", ")}`);
+        }
+
+        if (price !== undefined && (typeof price !== "number" || price <= 0)) {
+            throw new ApiError(400, "Price must be a positive number");
         }
 
         const data = await prisma.product.update({
             where: { id },
-            data: { name, description, category, price },
+            data: {
+                ...(name !== undefined && { name: name.trim() }),
+                ...(description !== undefined && { description: description || null }),
+                ...(category !== undefined && { category }),
+                ...(price !== undefined && { price }),
+            },
         });
-        return res.status(200).json({ data, message: "Product updated successfully" });
+
+        return res.status(200).json(new ApiResponse(200, "Product updated successfully", data));
     } catch (err) {
-        return res.status(500).json({ error: err.message });
+        next(err);
     }
 };
 
-export const removeProduct = async (req, res) => {
+export const removeProduct = async (req, res, next) => {
     try {
         const id = parseInt(req.params.id);
-        const existing = await prisma.product.findUnique({ where: { id } });
 
-        if (!existing) return res.status(404).json({ error: "Product not found" });
+        if (isNaN(id)) throw new ApiError(400, "Invalid product ID");
+
+        const existing = await prisma.product.findUnique({ where: { id } });
+        if (!existing) throw new ApiError(404, "Product not found");
 
         await prisma.product.delete({ where: { id } });
 
-        return res.status(200).json({ message: "Product deleted successfully" });
+        return res.status(200).json(new ApiResponse(200, "Product deleted successfully"));
     } catch (err) {
-        return res.status(500).json({ error: err.message });
+        next(err);
     }
 };
