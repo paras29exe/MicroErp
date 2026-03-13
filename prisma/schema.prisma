@@ -46,8 +46,7 @@ model Product {
   name        String
   description String?
   category    ProductCategory
-  price       Float
-  stock       Int      @default(0)
+  restockLevel Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
 
@@ -65,7 +64,7 @@ model Customer {
   id        Int      @id @default(autoincrement())
   name      String
   email     String?  @unique
-  phone     Int?
+  phone     String
   address   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
@@ -79,7 +78,7 @@ model Vendor {
   id        Int       @id @default(autoincrement())
   name      String
   email     String?   @unique
-  phone     Int?
+  phone     String
   address   String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @default(now()) @updatedAt
@@ -90,12 +89,13 @@ model Vendor {
 }
 
 model Purchase {
-  id          Int       @id @default(autoincrement())
-  vendorId    Int
-  totalAmount Float
-  purchaseDate DateTime @default(now())
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @default(now()) @updatedAt
+  id            Int       @id @default(autoincrement())
+  vendorId      Int
+  totalAmount   Float
+  purchaseDate  DateTime  @default(now())
+  paymentStatus String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now()) @updatedAt
 
   vendor Vendor @relation(fields: [vendorId], references: [id])
   items  PurchaseItem[]
