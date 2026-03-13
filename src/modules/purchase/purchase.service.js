@@ -1,41 +1,37 @@
 import prisma from "../../config/db.js";
+import { increaseStock, decreaseStock } from "../inventory/inventory.service.js";
 
 export const createPurchase = async ({ vendorId, purchaseDate, paymentStatus, items }) => {
     const totalAmount = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
 
-    return prisma.$transaction(async (tx) => {
-        const purchase = await tx.purchase.create({
+    const purchase = await prisma.purchase.create({
+        data: {
+            vendorId,
+            totalAmount,
+            purchaseDate,
+            paymentStatus,
+        },
+    });
+
+    for (const item of items) {
+        await prisma.purchaseItem.create({
             data: {
-                vendorId,
-                totalAmount,
-                purchaseDate,
-                paymentStatus,
+                purchaseId: purchase.id,
+                productId: item.productId,
+                quantity: item.quantity,
+                price: item.price,
             },
         });
 
-        for (const item of items) {
-            await tx.purchaseItem.create({
-                data: {
-                    purchaseId: purchase.id,
-                    productId: item.productId,
-                    quantity: item.quantity,
-                    price: item.price,
-                },
-            });
+        await increaseStock(item.productId, item.quantity, "PURCHASE", `PUR-${purchase.id}`);
+    }
 
-            // await tx.product.update({
-            //     where: { id: item.productId },
-            //     data: { stock: { increment: item.quantity } },
-            // });
-        }
-
-        return tx.purchase.findUnique({
-            where: { id: purchase.id },
-            include: {
-                vendor: true,
-                items: { include: { product: true } },
-            },
-        });
+    return prisma.purchase.findUnique({
+        where: { id: purchase.id },
+        include: {
+            vendor: true,
+            items: { include: { product: true } },
+        },
     });
 };
 
@@ -81,17 +77,12 @@ export const deletePurchase = async (id) => {
 
     if (!purchase) return null;
 
-    await prisma.$transaction(async (tx) => {
-        for (const item of purchase.items) {
-            await tx.product.update({
-                where: { id: item.productId },
-                data: { stock: { decrement: item.quantity } },
-            });
-        }
+    for (const item of purchase.items) {
+        await decreaseStock(item.productId, item.quantity, "PURCHASE", `PUR-${id}`);
+    }
 
-        await tx.purchaseItem.deleteMany({ where: { purchaseId: id } });
-        await tx.purchase.delete({ where: { id } });
-    });
+    await prisma.purchaseItem.deleteMany({ where: { purchaseId: id } });
+    await prisma.purchase.delete({ where: { id } });
 
     return purchase;
 };

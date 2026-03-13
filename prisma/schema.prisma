@@ -22,15 +22,15 @@ enum UserRole {
 }
 
 model User {
-  id           Int       @id @default(autoincrement())
+  id           Int      @id @default(autoincrement())
   employeeId   String
   name         String
-  email        String    @unique
+  email        String   @unique
   passwordHash String
   role         UserRole
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @default(now()) @updatedAt
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
 
   @@map("users")
 }
@@ -42,22 +42,35 @@ enum ProductCategory {
 }
 
 model Product {
-  id          Int      @id @default(autoincrement())
-  name        String
-  description String?
-  category    ProductCategory
-  restockLevel Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
+  id           Int             @id @default(autoincrement())
+  name         String
+  description  String?
+  category     ProductCategory
+  restockLevel Int             @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @default(now()) @updatedAt
 
-  purchaseItems PurchaseItem[]
-  saleItems     SaleItem[]
-  boms          BOM[]
-  bomItems      BOMItem[] @relation("RawMaterialRelation")
-  productions   Production[]
+  purchaseItems         PurchaseItem[]
+  saleItems             SaleItem[]
+  boms                  BOM[]
+  bomItems              BOMItem[]              @relation("RawMaterialRelation")
+  productions           Production[]
   inventoryTransactions InventoryTransaction[]
+  inventory             Inventory?
 
   @@map("products")
+}
+
+model Inventory {
+  id            Int      @id @default(autoincrement())
+  productId     Int      @unique
+  stockQuantity Int      @default(0)
+  reorderLevel  Int      @default(0)
+  updatedAt     DateTime @default(now()) @updatedAt
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@map("inventory")
 }
 
 model Customer {
@@ -75,13 +88,13 @@ model Customer {
 }
 
 model Vendor {
-  id        Int       @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   name      String
-  email     String?   @unique
+  email     String?  @unique
   phone     String
   address   String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @default(now()) @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   purchases Purchase[]
 
@@ -89,28 +102,28 @@ model Vendor {
 }
 
 model Purchase {
-  id            Int       @id @default(autoincrement())
+  id            Int      @id @default(autoincrement())
   vendorId      Int
   totalAmount   Float
-  purchaseDate  DateTime  @default(now())
+  purchaseDate  DateTime @default(now())
   paymentStatus String
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @default(now()) @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
 
-  vendor Vendor @relation(fields: [vendorId], references: [id])
+  vendor Vendor         @relation(fields: [vendorId], references: [id])
   items  PurchaseItem[]
 
   @@map("purchases")
 }
 
 model PurchaseItem {
-  id          Int       @id @default(autoincrement())
-  purchaseId  Int
-  productId   Int
-  quantity    Int
-  price       Float
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @default(now()) @updatedAt
+  id         Int      @id @default(autoincrement())
+  purchaseId Int
+  productId  Int
+  quantity   Int
+  price      Float
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
 
   purchase Purchase @relation(fields: [purchaseId], references: [id])
   product  Product  @relation(fields: [productId], references: [id])
@@ -126,18 +139,18 @@ model Sale {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
 
-  customer Customer @relation(fields: [customerId], references: [id])
+  customer Customer   @relation(fields: [customerId], references: [id])
   items    SaleItem[]
 
   @@map("sales")
 }
 
 model SaleItem {
-  id       Int      @id @default(autoincrement())
-  saleId   Int
+  id        Int      @id @default(autoincrement())
+  saleId    Int
   productId Int
-  quantity Int
-  price    Float
+  quantity  Int
+  price     Float
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 
@@ -153,33 +166,33 @@ model BOM {
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 
-  product Product @relation(fields: [productId], references: [id])
+  product Product   @relation(fields: [productId], references: [id])
   items   BOMItem[]
 
   @@map("bom")
 }
 
 model BOMItem {
-  id          Int      @id @default(autoincrement())
-  bomId       Int
+  id            Int      @id @default(autoincrement())
+  bomId         Int
   rawMaterialId Int
-  quantity    Int
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
+  quantity      Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
 
-  bom         BOM      @relation(fields: [bomId], references: [id])
-  rawMaterial Product  @relation(fields: [rawMaterialId], references: [id], name: "RawMaterialRelation")
+  bom         BOM     @relation(fields: [bomId], references: [id])
+  rawMaterial Product @relation(fields: [rawMaterialId], references: [id], name: "RawMaterialRelation")
 
   @@map("bom_items")
 }
 
 model Production {
-  id          Int      @id @default(autoincrement())
-  productId   Int
-  quantity    Int
+  id             Int      @id @default(autoincrement())
+  productId      Int
+  quantity       Int
   productionDate DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
 
   product Product @relation(fields: [productId], references: [id])
 
@@ -202,6 +215,8 @@ model InventoryTransaction {
   productId       Int
   transactionType String
   quantity        Int
+  referenceId     String?
+  reason          String?
   transactionDate DateTime @default(now())
   createdAt       DateTime @default(now())
   updatedAt       DateTime @default(now()) @updatedAt
