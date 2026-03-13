@@ -31,7 +31,7 @@ customers → sales customers
 
 vendors → suppliers
 
-#Purchase module
+# Purchase module
 
 purchases → purchase invoice header
 

@@ -5,7 +5,7 @@ const VALID_CATEGORIES = ["raw", "wip", "finished"];
 
 export const addProduct = async (req, res, next) => {
     try {
-        const { name, price, description, category } = req.body;
+        const { name, description, category, restockLevel } = req.body;
 
         if (!name || typeof name !== "string" || name.trim() === "") {
             throw new ApiError(400, "Product name is required");
@@ -16,13 +16,16 @@ export const addProduct = async (req, res, next) => {
             throw new ApiError(400, `Category must be one of: ${VALID_CATEGORIES.join(", ")}`);
         }
 
-        if (price == null) throw new ApiError(400, "Price is required");
-        if (typeof price !== "number" || price <= 0) {
-            throw new ApiError(400, "Price must be a positive number");
+        if (restockLevel !== undefined) {
+            if (typeof restockLevel !== "number" || restockLevel < 0) {
+                throw new ApiError(400, "Restock level must be a non-negative number");
+            }
+        }else{
+            throw new ApiError(400, "Restock level is required");
         }
 
         const data = await prisma.product.create({
-            data: { name: name.trim(), description: description || null, category, price },
+            data: { name: name.trim(), description: description || null, category, restockLevel: restockLevel},
         });
 
         return res.status(201).json(new ApiResponse(201, "Product added successfully", data));
@@ -74,7 +77,7 @@ export const editProduct = async (req, res, next) => {
         const existing = await prisma.product.findUnique({ where: { id } });
         if (!existing) throw new ApiError(404, "Product not found");
 
-        const { name, description, category, price } = req.body;
+        const { name, description, category, restockLevel } = req.body;
 
         if (name !== undefined && (typeof name !== "string" || name.trim() === "")) {
             throw new ApiError(400, "Product name cannot be empty");
@@ -84,8 +87,10 @@ export const editProduct = async (req, res, next) => {
             throw new ApiError(400, `Category must be one of: ${VALID_CATEGORIES.join(", ")}`);
         }
 
-        if (price !== undefined && (typeof price !== "number" || price <= 0)) {
-            throw new ApiError(400, "Price must be a positive number");
+        if (restockLevel !== undefined) {
+            if (typeof restockLevel !== "number" || restockLevel < 0) {
+                throw new ApiError(400, "Restock level must be a non-negative number");
+            }
         }
 
         const data = await prisma.product.update({
@@ -94,7 +99,7 @@ export const editProduct = async (req, res, next) => {
                 ...(name !== undefined && { name: name.trim() }),
                 ...(description !== undefined && { description: description || null }),
                 ...(category !== undefined && { category }),
-                ...(price !== undefined && { price }),
+                ...(restockLevel !== undefined && { restockLevel }),
             },
         });
 

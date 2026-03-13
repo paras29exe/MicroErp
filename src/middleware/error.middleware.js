@@ -14,5 +14,6 @@ export const errorHandler = (err, req, res, next) => {
         success: false,
         statusCode: 500,
         message: "Internal server error",
+        error: process.env.NODE_ENV === "production" ? undefined : err.message,
     });
 };

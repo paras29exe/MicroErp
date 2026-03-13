@@ -1,6 +1,8 @@
 import prisma from "../../../config/db.js";
 import { ApiResponse, ApiError } from "../../../utils/response.js";
 
+const isValidPhone = (value) => typeof value === "string" && value.trim() !== "" && /^[0-9()+\s-]+$/.test(value);
+
 export const addCustomer = async (req, res, next) => {
     try {
         const { name, email, phone, address } = req.body;
@@ -13,8 +15,8 @@ export const addCustomer = async (req, res, next) => {
             throw new ApiError(400, "Invalid email address");
         }
 
-        if (phone !== undefined && phone !== null && (!Number.isInteger(Number(phone)) || Number(phone) <= 0)) {
-            throw new ApiError(400, "Phone must be a positive integer");
+        if (phone !== undefined && phone !== null && !isValidPhone(phone)) {
+            throw new ApiError(400, "Invalid phone format");
         }
 
         if (email) {
@@ -26,7 +28,7 @@ export const addCustomer = async (req, res, next) => {
             data: {
                 name: name.trim(),
                 email: email || null,
-                phone: phone != null ? parseInt(phone) : null,
+                phone: phone != null ? phone : null,
                 address: address || null,
             },
         });
@@ -98,8 +100,8 @@ export const editCustomer = async (req, res, next) => {
             throw new ApiError(400, "Invalid email address");
         }
 
-        if (phone !== undefined && phone !== null && (!Number.isInteger(Number(phone)) || Number(phone) <= 0)) {
-            throw new ApiError(400, "Phone must be a positive integer");
+        if (phone !== undefined && phone !== null && !isValidPhone(phone)) {
+            throw new ApiError(400, "Invalid phone format");
         }
 
         if (email && email !== existing.email) {
@@ -112,7 +114,7 @@ export const editCustomer = async (req, res, next) => {
             data: {
                 ...(name !== undefined && { name: name.trim() }),
                 ...(email !== undefined && { email: email || null }),
-                ...(phone !== undefined && { phone: phone != null ? parseInt(phone) : null }),
+                ...(phone !== undefined && { phone: phone != null ? phone : null }),
                 ...(address !== undefined && { address: address || null }),
             },
         });
