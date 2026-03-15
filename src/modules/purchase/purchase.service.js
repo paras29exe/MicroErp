@@ -1,4 +1,5 @@
 import prisma from "../../config/db.js";
+import { increaseStock, decreaseStock } from "../inventory/inventory.service.js";
 
 export const createPurchase = async ({ vendorId, purchaseDate, paymentStatus, items }) => {
     const totalAmount = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
@@ -22,11 +23,14 @@ export const createPurchase = async ({ vendorId, purchaseDate, paymentStatus, it
                     price: item.price,
                 },
             });
-
-            // await tx.product.update({
-            //     where: { id: item.productId },
-            //     data: { stock: { increment: item.quantity } },
-            // });
+            // Increase stock inside the transaction
+            await increaseStock(
+                item.productId,
+                item.quantity,
+                "PURCHASE",
+                `PUR-${purchase.id}`,
+                tx
+            );
         }
 
         return tx.purchase.findUnique({
@@ -80,13 +84,9 @@ export const deletePurchase = async (id) => {
     });
 
     if (!purchase) return null;
-
     await prisma.$transaction(async (tx) => {
         for (const item of purchase.items) {
-            await tx.product.update({
-                where: { id: item.productId },
-                data: { stock: { decrement: item.quantity } },
-            });
+            await decreaseStock(item.productId, item.quantity, "PURCHASE", `PUR-${id}`, tx);
         }
 
         await tx.purchaseItem.deleteMany({ where: { purchaseId: id } });
