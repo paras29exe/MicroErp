@@ -4,34 +4,42 @@ import { increaseStock, decreaseStock } from "../inventory/inventory.service.js"
 export const createPurchase = async ({ vendorId, purchaseDate, paymentStatus, items }) => {
     const totalAmount = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
 
-    const purchase = await prisma.purchase.create({
-        data: {
-            vendorId,
-            totalAmount,
-            purchaseDate,
-            paymentStatus,
-        },
-    });
-
-    for (const item of items) {
-        await prisma.purchaseItem.create({
+    return prisma.$transaction(async (tx) => {
+        const purchase = await tx.purchase.create({
             data: {
-                purchaseId: purchase.id,
-                productId: item.productId,
-                quantity: item.quantity,
-                price: item.price,
+                vendorId,
+                totalAmount,
+                purchaseDate,
+                paymentStatus,
             },
         });
 
-        await increaseStock(item.productId, item.quantity, "PURCHASE", `PUR-${purchase.id}`);
-    }
+        for (const item of items) {
+            await tx.purchaseItem.create({
+                data: {
+                    purchaseId: purchase.id,
+                    productId: item.productId,
+                    quantity: item.quantity,
+                    price: item.price,
+                },
+            });
+            // Increase stock inside the transaction
+            await increaseStock(
+                item.productId,
+                item.quantity,
+                "PURCHASE",
+                `PUR-${purchase.id}`,
+                tx
+            );
+        }
 
-    return prisma.purchase.findUnique({
-        where: { id: purchase.id },
-        include: {
-            vendor: true,
-            items: { include: { product: true } },
-        },
+        return tx.purchase.findUnique({
+            where: { id: purchase.id },
+            include: {
+                vendor: true,
+                items: { include: { product: true } },
+            },
+        });
     });
 };
 
@@ -76,13 +84,14 @@ export const deletePurchase = async (id) => {
     });
 
     if (!purchase) return null;
+    await prisma.$transaction(async (tx) => {
+        for (const item of purchase.items) {
+            await decreaseStock(item.productId, item.quantity, "PURCHASE", `PUR-${id}`, tx);
+        }
 
-    for (const item of purchase.items) {
-        await decreaseStock(item.productId, item.quantity, "PURCHASE", `PUR-${id}`);
-    }
-
-    await prisma.purchaseItem.deleteMany({ where: { purchaseId: id } });
-    await prisma.purchase.delete({ where: { id } });
+        await tx.purchaseItem.deleteMany({ where: { purchaseId: id } });
+        await tx.purchase.delete({ where: { id } });
+    });
 
     return purchase;
 };
