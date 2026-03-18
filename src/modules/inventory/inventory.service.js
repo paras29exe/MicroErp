@@ -1,4 +1,5 @@
 import prisma from "../../config/db.js";
+import { ApiError } from "../../utils/response.js";
 
 export const getInventory = async ({ search, lowStock, page, limit }) => {
     let products = await prisma.product.findMany({
@@ -34,9 +35,7 @@ export const getProductInventory = async (productId) => {
     });
 
     if (!product || !product.inventory) {
-        const error = new Error("Inventory not found");
-        error.statusCode = 404;
-        throw error;
+        throw new ApiError(404, "Inventory not found");
     }
 
     return {
@@ -69,9 +68,7 @@ export const adjustStock = async ({ productId, adjustmentType, quantity, reason 
     });
 
     if (!product) {
-        const error = new Error("Product not found");
-        error.statusCode = 404;
-        throw error;
+        throw new ApiError(404, "Product not found");
     }
 
     let inventory = product.inventory;
@@ -125,9 +122,7 @@ export const updateReorderLevel = async (productId, reorderLevel) => {
     });
 
     if (!product) {
-        const error = new Error("Product not found");
-        error.statusCode = 404;
-        throw error;
+        throw new ApiError(404, "Product not found");
     }
 
     if (!product.inventory) {
@@ -145,32 +140,35 @@ export const updateReorderLevel = async (productId, reorderLevel) => {
 };
 
 // Internal functions for other modules
-export const increaseStock = async (productId, quantity, transactionType, referenceId) => {
-    let inventory = await prisma.inventory.findUnique({ where: { productId } });
+export const increaseStock = async (productId, quantity, transactionType, referenceId, tx = null) => {
+    const db = tx || prisma;
+
+    let inventory = await db.inventory.findUnique({ where: { productId } });
     if (!inventory) {
-        const product = await prisma.product.findUnique({ where: { id: productId } });
-        inventory = await prisma.inventory.create({
+        const product = await db.product.findUnique({ where: { id: productId } });
+        if (!product) {
+            throw new ApiError(400, `Product with ID ${productId} does not exist`);
+        }
+        inventory = await db.inventory.create({
             data: { productId, stockQuantity: 0, reorderLevel: product.restockLevel },
         });
     }
 
-    await prisma.$transaction(async (tx) => {
-        await tx.inventory.update({
-            where: { productId },
-            data: { stockQuantity: { increment: quantity } },
-        });
+    await db.inventory.update({
+        where: { productId },
+        data: { stockQuantity: { increment: quantity } },
+    });
 
-        await tx.inventoryTransaction.create({
-            data: {
-                productId,
-                transactionType,
-                quantity,
-                referenceId,
-            },
-        });
+    await db.inventoryTransaction.create({
+        data: {
+            productId,
+            transactionType,
+            quantity,
+            referenceId,
+        },
     });
 };
 
-export const decreaseStock = async (productId, quantity, transactionType, referenceId) => {
-    await increaseStock(productId, -quantity, transactionType, referenceId);
+export const decreaseStock = async (productId, quantity, transactionType, referenceId, tx = null) => {
+    await increaseStock(productId, -quantity, transactionType, referenceId, tx);
 };

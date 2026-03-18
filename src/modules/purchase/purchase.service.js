@@ -1,10 +1,33 @@
 import prisma from "../../config/db.js";
 import { increaseStock, decreaseStock } from "../inventory/inventory.service.js";
+import { ApiError } from "../../utils/response.js";
 
 export const createPurchase = async ({ vendorId, purchaseDate, paymentStatus, items }) => {
     const totalAmount = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
 
     return prisma.$transaction(async (tx) => {
+        const vendor = await tx.vendor.findUnique({
+            where: { id: vendorId },
+            select: { id: true },
+        });
+
+        if (!vendor) {
+            throw new ApiError(400, `Vendor with ID ${vendorId} does not exist`);
+        }
+
+        const uniqueProductIds = [...new Set(items.map((item) => item.productId))];
+        const existingProducts = await tx.product.findMany({
+            where: { id: { in: uniqueProductIds } },
+            select: { id: true },
+        });
+
+        const existingProductIds = new Set(existingProducts.map((product) => product.id));
+        const missingProductIds = uniqueProductIds.filter((id) => !existingProductIds.has(id));
+
+        if (missingProductIds.length > 0) {
+            throw new ApiError(400, `Invalid product ID(s): ${missingProductIds.join(", ")}`);
+        }
+
         const purchase = await tx.purchase.create({
             data: {
                 vendorId,
@@ -14,25 +37,27 @@ export const createPurchase = async ({ vendorId, purchaseDate, paymentStatus, it
             },
         });
 
+        await tx.purchaseItem.createMany({
+            data: items.map((item) => ({
+                purchaseId: purchase.id,
+                productId: item.productId,
+                quantity: item.quantity,
+                price: item.price,
+            })),
+        });
+        
+        // in case of duplicate product IDs, sum the quantities
+        const quantityByProductId = new Map();
         for (const item of items) {
-            await tx.purchaseItem.create({
-                data: {
-                    purchaseId: purchase.id,
-                    productId: item.productId,
-                    quantity: item.quantity,
-                    price: item.price,
-                },
-            });
-            // Increase stock inside the transaction
-            await increaseStock(
-                item.productId,
-                item.quantity,
-                "PURCHASE",
-                `PUR-${purchase.id}`,
-                tx
-            );
+            const previous = quantityByProductId.get(item.productId) || 0;
+            quantityByProductId.set(item.productId, previous + item.quantity);
         }
 
+        for (const [productId, quantity] of quantityByProductId) {
+            await increaseStock(productId, quantity, "PURCHASE", `PUR-${purchase.id}`, tx);
+        }
+        
+        // find the created purchase with its associated data
         return tx.purchase.findUnique({
             where: { id: purchase.id },
             include: {
@@ -40,7 +65,7 @@ export const createPurchase = async ({ vendorId, purchaseDate, paymentStatus, it
                 items: { include: { product: true } },
             },
         });
-    });
+    }, { maxWait: 10000, timeout: 20000 });
 };
 
 export const getPurchases = async ({ skip, take }) => {

@@ -6,6 +6,7 @@ import {
     updatePaymentStatus,
     deletePurchase,
 } from "./purchase.controller.js";
+import { authorizePermission } from "../../middleware/role.middleware.js";
 
 const router = Router();
 
@@ -15,10 +16,30 @@ const router = Router();
 // PUT    /api/purchases/update-payment-status/:id - update purchase payment status
 // DELETE /api/purchases/delete-purchase/:id   - delete a purchase
 
-router.post("/add-purchase", createPurchase);
-router.get("/get-purchases", getAllPurchases);
-router.get("/get-purchase/:id", getPurchaseById);
-router.put("/update-payment-status/:id", updatePaymentStatus);
-router.delete("/delete-purchase/:id", deletePurchase);
+router.post(
+    "/add-purchase",
+    authorizePermission("purchase:create"),
+    createPurchase
+);
+router.get(
+    "/get-purchases",
+    authorizePermission("purchase:read"),
+    getAllPurchases
+);
+router.get(
+    "/get-purchase/:id",
+    authorizePermission("purchase:read"),
+    getPurchaseById
+);
+router.put(
+    "/update-payment-status/:id",
+    authorizePermission("purchase:update"),
+    updatePaymentStatus
+);
+router.delete(
+    "/delete-purchase/:id",
+    authorizePermission("purchase:delete"),  
+    deletePurchase
+);
 
 export default router;

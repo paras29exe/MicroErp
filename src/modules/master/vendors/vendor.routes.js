@@ -6,6 +6,7 @@ import {
   getVendors,
   removeVendor,
 } from "./vendor.controller.js";
+import { authorizePermission } from "../../../middleware/role.middleware.js";
 
 const router = Router();
 
@@ -15,10 +16,30 @@ const router = Router();
 // PUT    /api/vendors/:id      - update vendor
 // DELETE /api/vendors/:id      - delete a vendor
 
-router.post("/add-vendor", addVendor);
-router.get("/get-vendors", getVendors);
-router.get("/get-vendor/:id", getVendor);
-router.put("/update-vendor/:id", editVendor);
-router.delete("/delete-vendor/:id", removeVendor);
+router.post(
+  "/add-vendor",
+  authorizePermission("master:create"),
+  addVendor
+);
+router.get(
+  "/get-vendors",
+  authorizePermission("master:read"),
+  getVendors
+);
+router.get(
+  "/get-vendor/:id",
+  authorizePermission("master:read"),
+  getVendor
+);
+router.put(
+  "/update-vendor/:id",
+  authorizePermission("master:update"),
+  editVendor
+);
+router.delete(
+  "/delete-vendor/:id",
+  authorizePermission("master:delete"),
+  removeVendor
+);
 
 export default router;

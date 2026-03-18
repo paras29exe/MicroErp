@@ -118,6 +118,20 @@ export const removeProduct = async (req, res, next) => {
         const existing = await prisma.product.findUnique({ where: { id } });
         if (!existing) throw new ApiError(404, "Product not found");
 
+        const [hasPurchaseItems, hasSaleItems, hasBOMs, hasBOMItems, hasProductions, hasInventoryTransactions, hasInventory] = await Promise.all([
+            prisma.purchaseItem.findFirst({ where: { productId: id }, select: { id: true } }),
+            prisma.saleItem.findFirst({ where: { productId: id }, select: { id: true } }),
+            prisma.bOM.findFirst({ where: { productId: id }, select: { id: true } }),
+            prisma.bOMItem.findFirst({ where: { rawMaterialId: id }, select: { id: true } }),
+            prisma.production.findFirst({ where: { productId: id }, select: { id: true } }),
+            prisma.inventoryTransaction.findFirst({ where: { productId: id }, select: { id: true } }),
+            prisma.inventory.findUnique({ where: { productId: id }, select: { id: true } }),
+        ]);
+
+        if (hasPurchaseItems || hasSaleItems || hasBOMs || hasBOMItems || hasProductions || hasInventoryTransactions || hasInventory) {
+            throw new ApiError(409, "Cannot delete product with existing dependent records");
+        }
+
         await prisma.product.delete({ where: { id } });
 
         return res.status(200).json(new ApiResponse(200, "Product deleted successfully"));
