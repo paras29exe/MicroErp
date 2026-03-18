@@ -13,7 +13,7 @@ export const testConnection = async () => {
         console.log("✅ Database Connected Successfully");
         console.log("Current Time:", time[0].now);
     } catch (err) {
-        console.error("❌ Database Connection Failed:", err.message);
+        console.error("❌ Database Connection Failed:", err);
     }
 };
 

@@ -7,14 +7,20 @@ import {
     getSummary,
     updateReorderLevel,
 } from "./inventory.controller.js";
+import { authorizePermission } from "../../middleware/role.middleware.js";
 
 const router = express.Router();
 
-router.get("/", getAllInventory);
-router.get("/low-stock", getLowStock);
-router.get("/summary", getSummary);
-router.get("/:productId", getProductInventory);
-router.post("/adjust", adjustStock);
-router.patch("/reorder-level/:productId", updateReorderLevel);
+router.get("/", authorizePermission("inventory:read"), getAllInventory);
+router.get("/low-stock", authorizePermission("inventory:read"), getLowStock);
+router.get("/summary", authorizePermission("inventory:read"), getSummary);
+router.get("/:productId", authorizePermission("inventory:read"), getProductInventory);
+router.post("/adjust", authorizePermission("inventory:update"), adjustStock);
+
+router.patch(
+    "/reorder-level/:productId",
+    authorizePermission("inventory:update"),
+    updateReorderLevel
+);
 
 export default router;
