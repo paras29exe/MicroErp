@@ -195,17 +195,68 @@ export const recordProduction = async ({ productId, quantity, productionDate }) 
 	}, { maxWait: 10000, timeout: 20000 });
 };
 
-export const getProductionHistory = async ({ skip, take }) => {
+export const getProductionHistory = async ({
+	skip,
+	take,
+	search,
+	startDate,
+	endDate,
+	minQty,
+	maxQty,
+	sortBy = "productionDate",
+	sortOrder = "desc",
+}) => {
+	const andFilters = [];
+
+	if (startDate || endDate) {
+		andFilters.push({
+			productionDate: {
+				...(startDate && { gte: startDate }),
+				...(endDate && { lte: endDate }),
+			},
+		});
+	}
+
+	if (minQty !== undefined || maxQty !== undefined) {
+		andFilters.push({
+			quantity: {
+				...(minQty !== undefined && { gte: minQty }),
+				...(maxQty !== undefined && { lte: maxQty }),
+			},
+		});
+	}
+
+	if (search) {
+		const numericSearch = Number.parseInt(search, 10);
+		const orFilters = [
+			{
+				product: {
+					name: { contains: search, mode: "insensitive" },
+				},
+			},
+		];
+
+		if (!Number.isNaN(numericSearch) && String(numericSearch) === search.trim()) {
+			orFilters.push({ id: numericSearch });
+		}
+
+		andFilters.push({ OR: orFilters });
+	}
+
+	const where = andFilters.length > 0 ? { AND: andFilters } : undefined;
+	const orderBy = sortBy === "productName" ? { product: { name: sortOrder } } : { [sortBy]: sortOrder };
+
 	const [data, total] = await Promise.all([
 		prisma.production.findMany({
+			where,
 			skip,
 			take,
-			orderBy: { productionDate: "desc" },
+			orderBy,
 			include: {
 				product: true,
 			},
 		}),
-		prisma.production.count(),
+		prisma.production.count({ where }),
 	]);
 
 	return { data, total };

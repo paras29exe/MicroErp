@@ -68,18 +68,87 @@ export const createPurchase = async ({ vendorId, purchaseDate, paymentStatus, it
     }, { maxWait: 10000, timeout: 20000 });
 };
 
-export const getPurchases = async ({ skip, take }) => {
+export const getPurchases = async ({
+    skip,
+    take,
+    search,
+    paymentStatus,
+    startDate,
+    endDate,
+    minAmount,
+    maxAmount,
+    sortBy = "purchaseDate",
+    sortOrder = "desc",
+}) => {
+    const andFilters = [];
+
+    if (paymentStatus) {
+        andFilters.push({ paymentStatus });
+    }
+
+    if (startDate || endDate) {
+        andFilters.push({
+            purchaseDate: {
+                ...(startDate && { gte: startDate }),
+                ...(endDate && { lte: endDate }),
+            },
+        });
+    }
+
+    if (minAmount !== undefined || maxAmount !== undefined) {
+        andFilters.push({
+            totalAmount: {
+                ...(minAmount !== undefined && { gte: minAmount }),
+                ...(maxAmount !== undefined && { lte: maxAmount }),
+            },
+        });
+    }
+
+    if (search) {
+        const orFilters = [
+            {
+                vendor: {
+                    name: { contains: search, mode: "insensitive" },
+                },
+            },
+            {
+                items: {
+                    some: {
+                        product: {
+                            name: { contains: search, mode: "insensitive" },
+                        },
+                    },
+                },
+            },
+        ];
+
+        const numericSearch = Number.parseInt(search, 10);
+        if (!Number.isNaN(numericSearch) && String(numericSearch) === search.trim()) {
+            orFilters.push({ id: numericSearch });
+        }
+
+        andFilters.push({ OR: orFilters });
+    }
+
+    const where = andFilters.length > 0 ? { AND: andFilters } : undefined;
+
+    const orderBy =
+        sortBy === "vendorName"
+            ? { vendor: { name: sortOrder } }
+            : { [sortBy]: sortOrder };
+
     const [data, total] = await Promise.all([
         prisma.purchase.findMany({
+            where,
             skip,
             take,
-            orderBy: { purchaseDate: "desc" },
+            orderBy,
             include: {
                 vendor: true,
                 items: { include: { product: true } },
             },
         }),
-        prisma.purchase.count(),
+        prisma.purchase.count({ where }),
     ]);
 
     return { data, total };

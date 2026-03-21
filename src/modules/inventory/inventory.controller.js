@@ -10,24 +10,85 @@ import {
 
 export const getAllInventory = async (req, res, next) => {
     try {
-        const { search, lowStock, page = 1, limit = 10 } = req.query;
-        const pageNum = Math.max(1, parseInt(page));
-        const limitNum = Math.max(1, parseInt(limit));
+        const {
+            search,
+            lowStock,
+            category,
+            stockStatus,
+            startDate,
+            endDate,
+            page = 1,
+            limit = 10,
+            sortBy = "updatedAt",
+            sortOrder = "desc",
+        } = req.query;
+
+        const pageNum = Math.max(1, Number.parseInt(page, 10) || 1);
+        const limitNum = Math.max(1, Number.parseInt(limit, 10) || 10);
+
+        const validCategories = ["raw", "wip", "finished"];
+        if (category && !validCategories.includes(category)) {
+            throw new ApiError(400, `category must be one of: ${validCategories.join(", ")}`);
+        }
+
+        const validStockStatuses = ["in", "out", "low"];
+        if (stockStatus && !validStockStatuses.includes(stockStatus)) {
+            throw new ApiError(400, `stockStatus must be one of: ${validStockStatuses.join(", ")}`);
+        }
+
+        let parsedStartDate;
+        if (startDate !== undefined) {
+            parsedStartDate = new Date(startDate);
+            if (Number.isNaN(parsedStartDate.getTime())) {
+                throw new ApiError(400, "startDate must be a valid date");
+            }
+        }
+
+        let parsedEndDate;
+        if (endDate !== undefined) {
+            parsedEndDate = new Date(endDate);
+            if (Number.isNaN(parsedEndDate.getTime())) {
+                throw new ApiError(400, "endDate must be a valid date");
+            }
+            parsedEndDate.setHours(23, 59, 59, 999);
+        }
+
+        if (parsedStartDate && parsedEndDate && parsedStartDate > parsedEndDate) {
+            throw new ApiError(400, "startDate must be before or equal to endDate");
+        }
+
+        const validSortFields = ["updatedAt", "stockQuantity", "reorderLevel", "productName"];
+        if (!validSortFields.includes(sortBy)) {
+            throw new ApiError(400, `sortBy must be one of: ${validSortFields.join(", ")}`);
+        }
+
+        const normalizedSortOrder = String(sortOrder).toLowerCase();
+        if (!["asc", "desc"].includes(normalizedSortOrder)) {
+            throw new ApiError(400, "sortOrder must be 'asc' or 'desc'");
+        }
 
         const { data, total } = await getInventory({
             search,
             lowStock: lowStock === "true",
+            category,
+            stockStatus,
+            startDate: parsedStartDate,
+            endDate: parsedEndDate,
             page: pageNum,
             limit: limitNum,
+            sortBy,
+            sortOrder: normalizedSortOrder,
         });
 
         return res.status(200).json(
             new ApiResponse(200, "Inventory retrieved successfully", {
-                inventory: data.map((p) => ({
-                    productId: p.id,
-                    productName: p.name,
-                    stockQuantity: p.inventory.stockQuantity,
-                    reorderLevel: p.inventory.reorderLevel,
+                inventory: data.map((row) => ({
+                    productId: row.product.id,
+                    productName: row.product.name,
+                    category: row.product.category,
+                    stockQuantity: row.stockQuantity,
+                    reorderLevel: row.reorderLevel,
+                    updatedAt: row.updatedAt,
                 })),
                 meta: { total, page: pageNum, limit: limitNum },
             })

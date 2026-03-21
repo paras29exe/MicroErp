@@ -66,16 +66,99 @@ export const createPurchase = async (req, res, next) => {
 
 export const getAllPurchases = async (req, res, next) => {
     try {
-        const page = Math.max(1, parseInt(req.query.page) || 1);
-        const limit = Math.max(1, parseInt(req.query.limit) || 10);
-        const skip = (page - 1) * limit;
+        const {
+            page,
+            limit,
+            search,
+            paymentStatus,
+            startDate,
+            endDate,
+            minAmount,
+            maxAmount,
+            sortBy = "purchaseDate",
+            sortOrder = "desc",
+        } = req.query;
 
-        const { data, total } = await getPurchasesService({ skip, take: limit });
+        const pageNum = Math.max(1, Number.parseInt(page, 10) || 1);
+        const limitNum = Math.max(1, Number.parseInt(limit, 10) || 10);
+        const skip = (pageNum - 1) * limitNum;
+
+        if (paymentStatus && !VALID_PAYMENT_STATUSES.includes(paymentStatus)) {
+            throw new ApiError(400, `paymentStatus must be one of: ${VALID_PAYMENT_STATUSES.join(", ")}`);
+        }
+
+        let parsedStartDate;
+        if (startDate !== undefined) {
+            parsedStartDate = new Date(startDate);
+            if (Number.isNaN(parsedStartDate.getTime())) {
+                throw new ApiError(400, "startDate must be a valid date");
+            }
+        }
+
+        let parsedEndDate;
+        if (endDate !== undefined) {
+            parsedEndDate = new Date(endDate);
+            if (Number.isNaN(parsedEndDate.getTime())) {
+                throw new ApiError(400, "endDate must be a valid date");
+            }
+            parsedEndDate.setHours(23, 59, 59, 999);
+        }
+
+        if (parsedStartDate && parsedEndDate && parsedStartDate > parsedEndDate) {
+            throw new ApiError(400, "startDate must be before or equal to endDate");
+        }
+
+        let parsedMinAmount;
+        if (minAmount !== undefined) {
+            parsedMinAmount = Number(minAmount);
+            if (Number.isNaN(parsedMinAmount) || parsedMinAmount < 0) {
+                throw new ApiError(400, "minAmount must be a non-negative number");
+            }
+        }
+
+        let parsedMaxAmount;
+        if (maxAmount !== undefined) {
+            parsedMaxAmount = Number(maxAmount);
+            if (Number.isNaN(parsedMaxAmount) || parsedMaxAmount < 0) {
+                throw new ApiError(400, "maxAmount must be a non-negative number");
+            }
+        }
+
+        if (
+            parsedMinAmount !== undefined &&
+            parsedMaxAmount !== undefined &&
+            parsedMinAmount > parsedMaxAmount
+        ) {
+            throw new ApiError(400, "minAmount must be less than or equal to maxAmount");
+        }
+
+        const validSortFields = ["purchaseDate", "totalAmount", "createdAt", "vendorName"];
+        if (!validSortFields.includes(sortBy)) {
+            throw new ApiError(400, `sortBy must be one of: ${validSortFields.join(", ")}`);
+        }
+
+        const normalizedSortOrder = String(sortOrder).toLowerCase();
+        if (!["asc", "desc"].includes(normalizedSortOrder)) {
+            throw new ApiError(400, "sortOrder must be 'asc' or 'desc'");
+        }
+
+        const { data, total } = await getPurchasesService({
+            skip,
+            take: limitNum,
+            search: typeof search === "string" ? search.trim() : undefined,
+            paymentStatus,
+            startDate: parsedStartDate,
+            endDate: parsedEndDate,
+            minAmount: parsedMinAmount,
+            maxAmount: parsedMaxAmount,
+            sortBy,
+            sortOrder: normalizedSortOrder,
+        });
 
         return res.status(200).json(
             new ApiResponse(200, "Purchases retrieved successfully", {
                 purchases: data,
-                meta: { total, page, limit },
+                meta: { total, page: pageNum, limit: limitNum },
             })
         );
     } catch (err) {
