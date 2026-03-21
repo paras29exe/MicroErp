@@ -11,6 +11,22 @@ export const addProduct = async (req, res, next) => {
             throw new ApiError(400, "Product name is required");
         }
 
+        const normalizedName = name.trim();
+
+        const duplicateProduct = await prisma.product.findFirst({
+            where: {
+                name: {
+                    equals: normalizedName,
+                    mode: "insensitive",
+                },
+            },
+            select: { id: true },
+        });
+
+        if (duplicateProduct) {
+            throw new ApiError(409, "Product with this name already exists");
+        }
+
         if (!category) throw new ApiError(400, "Category is required");
         if (!VALID_CATEGORIES.includes(category)) {
             throw new ApiError(400, `Category must be one of: ${VALID_CATEGORIES.join(", ")}`);
@@ -25,7 +41,7 @@ export const addProduct = async (req, res, next) => {
         }
 
         const data = await prisma.product.create({
-            data: { name: name.trim(), description: description || null, category, restockLevel: restockLevel},
+            data: { name: normalizedName, description: description || null, category, restockLevel: restockLevel},
         });
 
         return res.status(201).json(new ApiResponse(201, "Product added successfully", data));
@@ -83,6 +99,25 @@ export const editProduct = async (req, res, next) => {
             throw new ApiError(400, "Product name cannot be empty");
         }
 
+        const normalizedName = name !== undefined ? name.trim() : undefined;
+
+        if (normalizedName !== undefined) {
+            const duplicateProduct = await prisma.product.findFirst({
+                where: {
+                    id: { not: id },
+                    name: {
+                        equals: normalizedName,
+                        mode: "insensitive",
+                    },
+                },
+                select: { id: true },
+            });
+
+            if (duplicateProduct) {
+                throw new ApiError(409, "Product with this name already exists");
+            }
+        }
+
         if (category !== undefined && !VALID_CATEGORIES.includes(category)) {
             throw new ApiError(400, `Category must be one of: ${VALID_CATEGORIES.join(", ")}`);
         }
@@ -96,7 +131,7 @@ export const editProduct = async (req, res, next) => {
         const data = await prisma.product.update({
             where: { id },
             data: {
-                ...(name !== undefined && { name: name.trim() }),
+                ...(normalizedName !== undefined && { name: normalizedName }),
                 ...(description !== undefined && { description: description || null }),
                 ...(category !== undefined && { category }),
                 ...(restockLevel !== undefined && { restockLevel }),
