@@ -1,31 +1,84 @@
 import prisma from "../../config/db.js";
 import { ApiError } from "../../utils/response.js";
 
-export const getInventory = async ({ search, lowStock, page, limit }) => {
-    let products = await prisma.product.findMany({
-        include: { inventory: true },
-        orderBy: { createdAt: "desc" },
+export const getInventory = async ({
+    search,
+    lowStock,
+    category,
+    stockStatus,
+    startDate,
+    endDate,
+    page,
+    limit,
+    sortBy = "updatedAt",
+    sortOrder = "desc",
+}) => {
+    const where = {
+        ...(search || category
+            ? {
+                  product: {
+                      ...(search && {
+                          name: { contains: search, mode: "insensitive" },
+                      }),
+                      ...(category && { category }),
+                  },
+              }
+            : {}),
+        ...(startDate || endDate
+            ? {
+                  updatedAt: {
+                      ...(startDate && { gte: startDate }),
+                      ...(endDate && { lte: endDate }),
+                  },
+              }
+            : {}),
+        ...(stockStatus === "out" ? { stockQuantity: 0 } : {}),
+        ...(stockStatus === "in" ? { stockQuantity: { gt: 0 } } : {}),
+    };
+
+    const orderBy =
+        sortBy === "productName"
+            ? { product: { name: sortOrder } }
+            : { [sortBy]: sortOrder };
+
+    const requiresLowStockComparison = lowStock || stockStatus === "low";
+
+    if (!requiresLowStockComparison) {
+        const skip = (page - 1) * limit;
+
+        const [rows, total] = await Promise.all([
+            prisma.inventory.findMany({
+                where,
+                skip,
+                take: limit,
+                orderBy,
+                include: {
+                    product: {
+                        select: { id: true, name: true, category: true },
+                    },
+                },
+            }),
+            prisma.inventory.count({ where }),
+        ]);
+
+        return { data: rows, total };
+    }
+
+    const rows = await prisma.inventory.findMany({
+        where,
+        orderBy,
+        include: {
+            product: {
+                select: { id: true, name: true, category: true },
+            },
+        },
     });
 
-    products = products.filter((p) => p.inventory); // only with inventory
-
-    if (search) {
-        products = products.filter((p) =>
-            p.name.toLowerCase().includes(search.toLowerCase())
-        );
-    }
-
-    if (lowStock) {
-        products = products.filter(
-            (p) => p.inventory.stockQuantity <= p.inventory.reorderLevel
-        );
-    }
-
-    const total = products.length;
+    const filteredRows = rows.filter((row) => row.stockQuantity <= row.reorderLevel);
+    const total = filteredRows.length;
     const start = (page - 1) * limit;
-    const paginated = products.slice(start, start + limit);
 
-    return { data: paginated, total };
+    return { data: filteredRows.slice(start, start + limit), total };
 };
 
 export const getProductInventory = async (productId) => {
@@ -47,17 +100,21 @@ export const getProductInventory = async (productId) => {
 };
 
 export const getLowStockProducts = async () => {
-    const products = await prisma.product.findMany({
-        include: { inventory: true },
+    const inventoryRows = await prisma.inventory.findMany({
+        include: {
+            product: {
+                select: { id: true, name: true },
+            },
+        },
     });
 
-    return products
-        .filter((p) => p.inventory && p.inventory.stockQuantity <= p.inventory.reorderLevel)
-        .map((p) => ({
-            productId: p.id,
-            productName: p.name,
-            stockQuantity: p.inventory.stockQuantity,
-            reorderLevel: p.inventory.reorderLevel,
+    return inventoryRows
+        .filter((row) => row.stockQuantity <= row.reorderLevel)
+        .map((row) => ({
+            productId: row.product.id,
+            productName: row.product.name,
+            stockQuantity: row.stockQuantity,
+            reorderLevel: row.reorderLevel,
         }));
 };
 

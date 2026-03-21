@@ -1,18 +1,11 @@
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 
-const ACCESS_TOKEN_SECRET =
-	process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || "dev_access_secret";
-const ACCESS_TOKEN_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || "15m";
-const ACCESS_TOKEN_EXPIRES_MINUTES = parseInt(
-	process.env.JWT_ACCESS_EXPIRES_MINUTES || "15",
-	10
-);
+const ACCESS_TOKEN_SECRET = process.env.JWT_ACCESS_SECRET;
+const ACCESS_TOKEN_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN;
+const ACCESS_TOKEN_EXPIRES_MINUTES = parseInt(process.env.JWT_ACCESS_EXPIRES_MINUTES, 10);
 
-const REFRESH_TOKEN_EXPIRES_DAYS = parseInt(
-	process.env.JWT_REFRESH_EXPIRES_DAYS || "7",
-	10
-);
+const REFRESH_TOKEN_EXPIRES_DAYS = parseInt(process.env.JWT_REFRESH_EXPIRES_DAYS, 10);
 
 export const createAccessToken = (payload) => {
 	return jwt.sign(payload, ACCESS_TOKEN_SECRET, {
