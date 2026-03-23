@@ -51,6 +51,7 @@ model Product {
   name         String
   description  String?
   category     ProductCategory
+  costPrice    Float           @default(0)
   restockLevel Int             @default(0)
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @default(now()) @updatedAt
@@ -137,12 +138,15 @@ model PurchaseItem {
 }
 
 model Sale {
-  id          Int      @id @default(autoincrement())
-  customerId  Int
-  totalAmount Float
-  saleDate    DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
+  id           Int      @id @default(autoincrement())
+  customerId   Int
+  totalAmount  Float
+  sellingPrice Float
+  costPrice    Float
+  profit       Float
+  saleDate     DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
 
   customer Customer   @relation(fields: [customerId], references: [id])
   items    SaleItem[]
@@ -151,13 +155,15 @@ model Sale {
 }
 
 model SaleItem {
-  id        Int      @id @default(autoincrement())
-  saleId    Int
-  productId Int
-  quantity  Int
-  price     Float
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
+  id           Int      @id @default(autoincrement())
+  saleId       Int
+  productId    Int
+  quantity     Int
+  sellingPrice Float
+  costPrice    Float
+  profit       Float
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
 
   sale    Sale    @relation(fields: [saleId], references: [id])
   product Product @relation(fields: [productId], references: [id])
