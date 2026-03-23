@@ -9,6 +9,7 @@ const ROLE_PERMISSIONS = {
 		"sales:update",
 		"sales:delete",
 		"inventory:read",
+		"dashboard:read",
 	],
 	PURCHASE_MANAGER: [
 		"master:read",
@@ -17,6 +18,8 @@ const ROLE_PERMISSIONS = {
 		"purchase:update",
 		"purchase:delete",
 		"inventory:read",
+
+		"dashboard:read",
 	],
 	INVENTORY_MANAGER: [
 		"master:read",
@@ -25,6 +28,8 @@ const ROLE_PERMISSIONS = {
 		"purchase:read",
 		"sales:read",
 		"production:read",
+	
+		"dashboard:read",
 	],
 	PRODUCTION_MANAGER: [
 		"master:read",
@@ -35,6 +40,8 @@ const ROLE_PERMISSIONS = {
 		"inventory:read",
 		"inventory:update",
 		"purchase:read",
+
+		"dashboard:read",
 	],
 	ACCOUNTANT: [
 		"master:read",
@@ -44,6 +51,8 @@ const ROLE_PERMISSIONS = {
 		"production:read",
 		"expense:read",
 		"expense:create",
+
+		"dashboard:read",
 	],
 };
 
