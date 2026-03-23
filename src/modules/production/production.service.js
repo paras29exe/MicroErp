@@ -140,9 +140,10 @@ export const recordProduction = async ({ productId, quantity, productionDate }) 
 		const rawMaterialIds = requiredRawItems.map((item) => item.rawMaterialId);
 		const inventories = await tx.inventory.findMany({
 			where: { productId: { in: rawMaterialIds } },
-			select: { productId: true, stockQuantity: true },
+			select: { productId: true, stockQuantity: true, avgCost: true },
 		});
 
+		const inventoryByProductId = new Map(inventories.map((inv) => [inv.productId, inv]));
 		const stockByProductId = new Map(inventories.map((inv) => [inv.productId, inv.stockQuantity]));
 
 		const insufficients = requiredRawItems
@@ -160,21 +161,40 @@ export const recordProduction = async ({ productId, quantity, productionDate }) 
 			throw new ApiError(400, `Insufficient raw material stock. ${details}`);
 		}
 
+		let totalCost = 0;
+		const requiredRawItemsWithCost = requiredRawItems.map((item) => {
+			const inventory = inventoryByProductId.get(item.rawMaterialId);
+			const unitCost = inventory?.avgCost || 0;
+			const lineCost = unitCost * item.requiredQuantity;
+			totalCost += lineCost;
+
+			return {
+				...item,
+				unitCost,
+				lineCost,
+			};
+		});
+
+		const unitCost = quantity > 0 ? totalCost / quantity : 0;
+
 		const production = await tx.production.create({
 			data: {
 				productId,
 				quantity,
+				unitCost,
+				totalCost,
 				productionDate,
 			},
 		});
 
-		for (const item of requiredRawItems) {
+		for (const item of requiredRawItemsWithCost) {
 			await decreaseStock(
 				item.rawMaterialId,
 				item.requiredQuantity,
 				"PROD_CONSUME_RAW",
 				`PROD-${production.id}`,
-				tx
+				tx,
+				{ unitCost: item.unitCost }
 			);
 		}
 
@@ -183,7 +203,8 @@ export const recordProduction = async ({ productId, quantity, productionDate }) 
 			quantity,
 			"PROD_OUTPUT_FINISHED",
 			`PROD-${production.id}`,
-			tx
+			tx,
+			{ unitCost }
 		);
 
 		return tx.production.findUnique({

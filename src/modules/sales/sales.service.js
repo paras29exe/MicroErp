@@ -3,23 +3,29 @@ import { decreaseStock } from "../inventory/inventory.service.js";
 import { ApiError } from "../../utils/response.js";
 
 export const createSale = async ({ customerId, saleDate, items }) => {
-    const totalSellingAmount = items.reduce((sum, item) => sum + item.quantity * item.sellingPrice, 0);
+    const totalSellingAmount = items.reduce((sum, item) => sum + item.quantity * item.unitSellingPrice, 0);
 
     return prisma.$transaction(async (tx) => {
-        const customer = await tx.customer.findUnique({
-            where: { id: customerId },
-            select: { id: true },
-        });
+        const uniqueProductIds = [...new Set(items.map((item) => item.productId))];
+
+        const [customer, products, inventories] = await Promise.all([
+            tx.customer.findUnique({
+                where: { id: customerId },
+                select: { id: true },
+            }),
+            tx.product.findMany({
+                where: { id: { in: uniqueProductIds } },
+                select: { id: true, category: true },
+            }),
+            tx.inventory.findMany({
+                where: { productId: { in: uniqueProductIds } },
+                select: { productId: true, stockQuantity: true, avgCost: true },
+            }),
+        ]);
 
         if (!customer) {
             throw new ApiError(400, `Customer with ID ${customerId} does not exist`);
         }
-
-        const uniqueProductIds = [...new Set(items.map((item) => item.productId))];
-        const products = await tx.product.findMany({
-            where: { id: { in: uniqueProductIds } },
-            select: { id: true, category: true, costPrice: true },
-        });
 
         const existingProductIds = new Set(products.map((product) => product.id));
         const missingProductIds = uniqueProductIds.filter((id) => !existingProductIds.has(id));
@@ -33,12 +39,8 @@ export const createSale = async ({ customerId, saleDate, items }) => {
             throw new ApiError(400, "Only finished products can be sold");
         }
 
-        const inventories = await tx.inventory.findMany({
-            where: { productId: { in: uniqueProductIds } },
-            select: { productId: true, stockQuantity: true },
-        });
-
         const stockByProductId = new Map(inventories.map((inv) => [inv.productId, inv.stockQuantity]));
+        const avgCostByProductId = new Map(inventories.map((inv) => [inv.productId, inv.avgCost || 0]));
 
         const quantityByProductId = new Map();
         for (const item of items) {
@@ -65,19 +67,18 @@ export const createSale = async ({ customerId, saleDate, items }) => {
         let totalProfit = 0;
 
         const saleItemsData = items.map((item) => {
-            const product = products.find((p) => p.id === item.productId);
-            const costPrice = product.costPrice;
-            const profit = (item.sellingPrice - costPrice) * item.quantity;
+            const unitCost = avgCostByProductId.get(item.productId) || 0;
+            const lineProfit = (item.unitSellingPrice - unitCost) * item.quantity;
 
-            totalCost += costPrice * item.quantity;
-            totalProfit += profit;
+            totalCost += unitCost * item.quantity;
+            totalProfit += lineProfit;
 
             return {
                 productId: item.productId,
                 quantity: item.quantity,
-                sellingPrice: item.sellingPrice,
-                costPrice,
-                profit,
+                unitSellingPrice: item.unitSellingPrice,
+                unitCost,
+                profit: lineProfit,
             };
         });
 
@@ -85,9 +86,9 @@ export const createSale = async ({ customerId, saleDate, items }) => {
             data: {
                 customerId,
                 totalAmount: totalSellingAmount,
-                sellingPrice: totalSellingAmount,
-                costPrice: totalCost,
-                profit: totalProfit,
+                grossSales: totalSellingAmount,
+                totalCogs: totalCost,
+                grossProfit: totalProfit,
                 saleDate,
             },
         });
@@ -97,15 +98,19 @@ export const createSale = async ({ customerId, saleDate, items }) => {
                 saleId: sale.id,
                 productId: item.productId,
                 quantity: item.quantity,
-                sellingPrice: item.sellingPrice,
-                costPrice: item.costPrice,
+                unitSellingPrice: item.unitSellingPrice,
+                unitCost: item.unitCost,
                 profit: item.profit,
             })),
         });
 
-        for (const [productId, quantity] of quantityByProductId) {
-            await decreaseStock(productId, quantity, "SALE", `SALE-${sale.id}`, tx);
-        }
+        await Promise.all(
+            [...quantityByProductId].map(([productId, quantity]) =>
+                decreaseStock(productId, quantity, "SALE", `SALE-${sale.id}`, tx, {
+                    unitCost: avgCostByProductId.get(productId) || 0,
+                })
+            )
+        );
 
         return tx.sale.findUnique({
             where: { id: sale.id },
@@ -140,9 +145,9 @@ export const getSales = async ({ skip, take, productId, startDate, endDate, prof
     }
 
     if (profitFilter === "positive") {
-        andFilters.push({ profit: { gt: 0 } });
+        andFilters.push({ grossProfit: { gt: 0 } });
     } else if (profitFilter === "negative") {
-        andFilters.push({ profit: { lt: 0 } });
+        andFilters.push({ grossProfit: { lt: 0 } });
     }
 
     const where = andFilters.length > 0 ? { AND: andFilters } : undefined;
@@ -155,7 +160,6 @@ export const getSales = async ({ skip, take, productId, startDate, endDate, prof
             orderBy: { saleDate: "desc" },
             include: {
                 customer: true,
-                purchase: true,
                 items: { include: { product: true } },
             },
         }),

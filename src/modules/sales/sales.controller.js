@@ -23,7 +23,7 @@ export const createSale = async (req, res, next) => {
         }
 
         const normalizedItems = items.map((item, index) => {
-            const { productId, quantity, sellingPrice, costPrice } = item;
+            const { productId, quantity, unitSellingPrice, sellingPrice, unitCost, costPrice } = item;
 
             if (!productId || !Number.isInteger(Number(productId)) || Number(productId) <= 0) {
                 throw new ApiError(400, `items[${index}].productId must be a positive integer`);
@@ -33,18 +33,25 @@ export const createSale = async (req, res, next) => {
                 throw new ApiError(400, `items[${index}].quantity must be a positive integer`);
             }
 
-            if (sellingPrice === undefined || sellingPrice === null || isNaN(Number(sellingPrice)) || Number(sellingPrice) < 0) {
-                throw new ApiError(400, `items[${index}].sellingPrice must be a non-negative number`);
+            const resolvedUnitSellingPrice = unitSellingPrice ?? sellingPrice;
+
+            if (
+                resolvedUnitSellingPrice === undefined ||
+                resolvedUnitSellingPrice === null ||
+                isNaN(Number(resolvedUnitSellingPrice)) ||
+                Number(resolvedUnitSellingPrice) < 0
+            ) {
+                throw new ApiError(400, `items[${index}].unitSellingPrice must be a non-negative number`);
             }
 
-            if (costPrice !== undefined) {
-                throw new ApiError(400, `items[${index}].costPrice should not be provided`);
+            if (unitCost !== undefined || costPrice !== undefined) {
+                throw new ApiError(400, `items[${index}].unitCost should not be provided`);
             }
 
             return {
                 productId: Number(productId),
                 quantity: Number(quantity),
-                sellingPrice: Number(sellingPrice),
+                unitSellingPrice: Number(resolvedUnitSellingPrice),
             };
         });
 
@@ -62,8 +69,8 @@ export const createSale = async (req, res, next) => {
 
 export const getAllSales = async (req, res, next) => {
     try {
-        const page = Math.max(1, parseInt(req.query.page) || 1);
-        const limit = Math.max(1, parseInt(req.query.limit) || 10);
+        const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+        const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 10));
         const skip = (page - 1) * limit;
 
         const { productId, startDate, endDate, profit } = req.query;
@@ -127,8 +134,8 @@ export const getAllSales = async (req, res, next) => {
 
 export const getSaleById = async (req, res, next) => {
     try {
-        const id = parseInt(req.params.id);
-        if (Number.isNaN(id)) throw new ApiError(400, "Invalid sale ID");
+        const id = Number.parseInt(req.params.id, 10);
+        if (!Number.isInteger(id) || id <= 0) throw new ApiError(400, "Invalid sale ID");
 
         const data = await getSaleByIdService(id);
 

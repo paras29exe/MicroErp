@@ -46,15 +46,21 @@ export const createPurchase = async ({ vendorId, purchaseDate, paymentStatus, it
             })),
         });
         
-        // in case of duplicate product IDs, sum the quantities
-        const quantityByProductId = new Map();
+        // Aggregate quantity and value per product to maintain weighted average valuation.
+        const aggregatesByProductId = new Map();
         for (const item of items) {
-            const previous = quantityByProductId.get(item.productId) || 0;
-            quantityByProductId.set(item.productId, previous + item.quantity);
+            const previous = aggregatesByProductId.get(item.productId) || { quantity: 0, totalValue: 0 };
+            aggregatesByProductId.set(item.productId, {
+                quantity: previous.quantity + item.quantity,
+                totalValue: previous.totalValue + item.quantity * item.price,
+            });
         }
 
-        for (const [productId, quantity] of quantityByProductId) {
-            await increaseStock(productId, quantity, "PURCHASE", `PUR-${purchase.id}`, tx);
+        for (const [productId, aggregate] of aggregatesByProductId) {
+            const unitCost = aggregate.quantity > 0 ? aggregate.totalValue / aggregate.quantity : 0;
+            await increaseStock(productId, aggregate.quantity, "PURCHASE", `PUR-${purchase.id}`, tx, {
+                unitCost,
+            });
         }
         
         // find the created purchase with its associated data
