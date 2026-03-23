@@ -5,13 +5,18 @@ const VALID_CATEGORIES = ["raw", "wip", "finished"];
 
 export const addProduct = async (req, res, next) => {
     try {
-        const { name, description, category, restockLevel } = req.body;
+        const { name, description, category, restockLevel, costPrice } = req.body;
 
         if (!name || typeof name !== "string" || name.trim() === "") {
             throw new ApiError(400, "Product name is required");
         }
 
         const normalizedName = name.trim();
+
+        if (costPrice !== undefined && (typeof costPrice !== "number" || costPrice < 0)) {
+            throw new ApiError(400, "costPrice must be a non-negative number");
+        }
+
 
         const duplicateProduct = await prisma.product.findFirst({
             where: {
@@ -36,12 +41,22 @@ export const addProduct = async (req, res, next) => {
             if (typeof restockLevel !== "number" || restockLevel < 0) {
                 throw new ApiError(400, "Restock level must be a non-negative number");
             }
-        }else{
+        } else {
             throw new ApiError(400, "Restock level is required");
         }
 
+        if (costPrice !== undefined && (typeof costPrice !== "number" || costPrice < 0)) {
+            throw new ApiError(400, "costPrice must be a non-negative number");
+        }
+
         const data = await prisma.product.create({
-            data: { name: normalizedName, description: description || null, category, restockLevel: restockLevel},
+            data: {
+                name: normalizedName,
+                description: description || null,
+                category,
+                restockLevel: restockLevel,
+                costPrice: costPrice !== undefined ? costPrice : 0,
+            },
         });
 
         return res.status(201).json(new ApiResponse(201, "Product added successfully", data));
@@ -93,10 +108,14 @@ export const editProduct = async (req, res, next) => {
         const existing = await prisma.product.findUnique({ where: { id } });
         if (!existing) throw new ApiError(404, "Product not found");
 
-        const { name, description, category, restockLevel } = req.body;
+        const { name, description, category, restockLevel, costPrice } = req.body;
 
         if (name !== undefined && (typeof name !== "string" || name.trim() === "")) {
             throw new ApiError(400, "Product name cannot be empty");
+        }
+
+        if (costPrice !== undefined && (typeof costPrice !== "number" || costPrice < 0)) {
+            throw new ApiError(400, "costPrice must be a non-negative number");
         }
 
         const normalizedName = name !== undefined ? name.trim() : undefined;
@@ -135,6 +154,7 @@ export const editProduct = async (req, res, next) => {
                 ...(description !== undefined && { description: description || null }),
                 ...(category !== undefined && { category }),
                 ...(restockLevel !== undefined && { restockLevel }),
+                ...(costPrice !== undefined && { costPrice }),
             },
         });
 
