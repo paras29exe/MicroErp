@@ -7,13 +7,14 @@ export const authenticate = async (req, res, next) => {
 		const authHeader = req.headers.authorization || "";
 		const tokenFromHeader = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
 		const tokenFromCookie = req.cookies?.access_token || null;
-		const token = tokenFromHeader || tokenFromCookie;
+		const token = tokenFromCookie || tokenFromHeader;
 
 		if (!token) {
 			throw new ApiError(401, "Authentication required");
 		}
 
 		const payload = verifyAccessToken(token);
+
 		const user = await prisma.user.findUnique({
 			where: { id: payload.id },
 			select: {
@@ -38,6 +39,7 @@ export const authenticate = async (req, res, next) => {
 		next();
 	} catch (err) {
 		if (err instanceof ApiError) return next(err);
+		console.log(err)
 		return next(new ApiError(401, "Invalid or expired token"));
 	}
 };

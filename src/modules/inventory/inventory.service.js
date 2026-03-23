@@ -1,6 +1,11 @@
 import prisma from "../../config/db.js";
 import { ApiError } from "../../utils/response.js";
 
+const roundTo = (value, precision = 6) => {
+    const factor = 10 ** precision;
+    return Math.round(value * factor) / factor;
+};
+
 export const getInventory = async ({
     search,
     lowStock,
@@ -96,6 +101,8 @@ export const getProductInventory = async (productId) => {
         productName: product.name,
         stockQuantity: product.inventory.stockQuantity,
         reorderLevel: product.inventory.reorderLevel,
+        avgCost: product.inventory.avgCost,
+        stockValue: product.inventory.stockValue,
     };
 };
 
@@ -131,27 +138,30 @@ export const adjustStock = async ({ productId, adjustmentType, quantity, reason 
     let inventory = product.inventory;
     if (!inventory) {
         inventory = await prisma.inventory.create({
-            data: { productId, stockQuantity: 0, reorderLevel: product.restockLevel },
+            data: {
+                productId,
+                stockQuantity: 0,
+                reorderLevel: product.restockLevel,
+                avgCost: 0,
+                stockValue: 0,
+            },
         });
     }
 
     const adjustment = adjustmentType === "increase" ? quantity : -quantity;
 
-    await prisma.$transaction(async (tx) => {
-        await tx.inventory.update({
-            where: { productId },
-            data: { stockQuantity: { increment: adjustment } },
-        });
+    if (adjustment < 0 && inventory.stockQuantity < Math.abs(adjustment)) {
+        throw new ApiError(400, "Insufficient stock for adjustment");
+    }
 
-        await tx.inventoryTransaction.create({
-            data: {
-                productId,
-                transactionType: "ADJUSTMENT",
-                quantity: adjustment,
-                reason,
-            },
-        });
-    });
+    await increaseStock(
+        productId,
+        adjustment,
+        "ADJUSTMENT",
+        null,
+        null,
+        { reason }
+    );
 
     return { message: "Stock adjusted successfully" };
 };
@@ -184,7 +194,7 @@ export const updateReorderLevel = async (productId, reorderLevel) => {
 
     if (!product.inventory) {
         await prisma.inventory.create({
-            data: { productId, reorderLevel },
+            data: { productId, reorderLevel, avgCost: 0, stockValue: 0 },
         });
     } else {
         await prisma.inventory.update({
@@ -197,8 +207,16 @@ export const updateReorderLevel = async (productId, reorderLevel) => {
 };
 
 // Internal functions for other modules
-export const increaseStock = async (productId, quantity, transactionType, referenceId, tx = null) => {
+export const increaseStock = async (
+    productId,
+    quantity,
+    transactionType,
+    referenceId,
+    tx = null,
+    options = {}
+) => {
     const db = tx || prisma;
+    const { unitCost: inputUnitCost, reason } = options;
 
     let inventory = await db.inventory.findUnique({ where: { productId } });
     if (!inventory) {
@@ -207,25 +225,83 @@ export const increaseStock = async (productId, quantity, transactionType, refere
             throw new ApiError(400, `Product with ID ${productId} does not exist`);
         }
         inventory = await db.inventory.create({
-            data: { productId, stockQuantity: 0, reorderLevel: product.restockLevel },
+            data: {
+                productId,
+                stockQuantity: 0,
+                reorderLevel: product.restockLevel,
+                avgCost: 0,
+                stockValue: 0,
+            },
         });
     }
 
+    const previousQuantity = inventory.stockQuantity;
+    const previousValue = inventory.stockValue;
+    const quantityDelta = Number(quantity);
+
+    if (quantityDelta === 0) {
+        return;
+    }
+
+    if (quantityDelta < 0 && previousQuantity < Math.abs(quantityDelta)) {
+        throw new ApiError(400, `Insufficient stock for productId ${productId}`);
+    }
+
+    const effectiveUnitCost =
+        inputUnitCost !== undefined && inputUnitCost !== null
+            ? Number(inputUnitCost)
+            : Number(inventory.avgCost || 0);
+
+    if (!Number.isFinite(effectiveUnitCost) || effectiveUnitCost < 0) {
+        throw new ApiError(400, "Invalid unit cost for inventory transaction");
+    }
+
+    const totalValueDelta = roundTo(quantityDelta * effectiveUnitCost);
+    const nextQuantity = previousQuantity + quantityDelta;
+
+    let nextValue = roundTo(previousValue + totalValueDelta);
+    if (nextQuantity === 0) {
+        nextValue = 0;
+    }
+
+    if (nextValue < 0) {
+        nextValue = 0;
+    }
+
+    const nextAvgCost = nextQuantity > 0 ? roundTo(nextValue / nextQuantity) : 0;
+
     await db.inventory.update({
         where: { productId },
-        data: { stockQuantity: { increment: quantity } },
+        data: {
+            stockQuantity: nextQuantity,
+            stockValue: nextValue,
+            avgCost: nextAvgCost,
+        },
     });
 
     await db.inventoryTransaction.create({
         data: {
             productId,
             transactionType,
-            quantity,
+            quantity: quantityDelta,
+            unitCost: roundTo(effectiveUnitCost),
+            totalValue: totalValueDelta,
+            stockAfter: nextQuantity,
+            stockValueAfter: nextValue,
+            stockAvgCostAfter: nextAvgCost,
             referenceId,
+            reason,
         },
     });
 };
 
-export const decreaseStock = async (productId, quantity, transactionType, referenceId, tx = null) => {
-    await increaseStock(productId, -quantity, transactionType, referenceId, tx);
+export const decreaseStock = async (
+    productId,
+    quantity,
+    transactionType,
+    referenceId,
+    tx = null,
+    options = {}
+) => {
+    await increaseStock(productId, -quantity, transactionType, referenceId, tx, options);
 };
