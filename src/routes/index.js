@@ -9,6 +9,7 @@ import purchaseRouter from "../modules/purchase/purchase.routes.js";
 import inventoryRouter from "../modules/inventory/inventory.routes.js";
 import productionRouter from "../modules/production/production.routes.js";
 import salesRouter from "../modules/sales/sales.routes.js";
+import dashboardRouter from "../modules/dashboard/dashboard.routes.js";
 import authRouter from "../modules/auth/auth.routes.js";
 import userRouter from "../modules/users/user.routes.js";
 import { authenticate } from "../middleware/auth.middleware.js";
@@ -22,6 +23,7 @@ globalRouter.use("/purchases", authenticate, purchaseRouter);
 globalRouter.use("/inventory", authenticate, inventoryRouter);
 globalRouter.use("/production", authenticate, productionRouter);
 globalRouter.use("/sales", authenticate, salesRouter);
+globalRouter.use("/dashboard", authenticate, dashboardRouter);
 globalRouter.use("/users", authenticate, userRouter);
 
 export default globalRouter;
