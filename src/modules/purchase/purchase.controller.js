@@ -70,6 +70,9 @@ export const getAllPurchases = async (req, res, next) => {
             page,
             limit,
             search,
+            vendorName,
+            vendorPhone,
+            productName,
             paymentStatus,
             startDate,
             endDate,
@@ -132,6 +135,17 @@ export const getAllPurchases = async (req, res, next) => {
             throw new ApiError(400, "minAmount must be less than or equal to maxAmount");
         }
 
+        const normalizedVendorName =
+            typeof vendorName === "string" ? vendorName.trim() : undefined;
+        const normalizedVendorPhone =
+            typeof vendorPhone === "string" ? vendorPhone.trim() : undefined;
+        const normalizedProductName =
+            typeof productName === "string" ? productName.trim() : undefined;
+
+        if (normalizedVendorPhone && !/^[0-9()+\s-]+$/.test(normalizedVendorPhone)) {
+            throw new ApiError(400, "vendorPhone has invalid format");
+        }
+
         const validSortFields = ["purchaseDate", "totalAmount", "createdAt", "vendorName"];
         if (!validSortFields.includes(sortBy)) {
             throw new ApiError(400, `sortBy must be one of: ${validSortFields.join(", ")}`);
@@ -146,6 +160,9 @@ export const getAllPurchases = async (req, res, next) => {
             skip,
             take: limitNum,
             search: typeof search === "string" ? search.trim() : undefined,
+            vendorName: normalizedVendorName,
+            vendorPhone: normalizedVendorPhone,
+            productName: normalizedProductName,
             paymentStatus,
             startDate: parsedStartDate,
             endDate: parsedEndDate,

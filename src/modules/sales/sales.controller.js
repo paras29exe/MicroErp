@@ -73,7 +73,16 @@ export const getAllSales = async (req, res, next) => {
         const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 10));
         const skip = (page - 1) * limit;
 
-        const { productId, startDate, endDate, profit } = req.query;
+        const {
+            productId,
+            productName,
+            startDate,
+            endDate,
+            profit,
+            search,
+            customerName,
+            customerPhone,
+        } = req.query;
 
         let parsedStartDate;
         if (startDate !== undefined) {
@@ -112,6 +121,18 @@ export const getAllSales = async (req, res, next) => {
             throw new ApiError(400, "productId must be a positive integer");
         }
 
+        const normalizedSearch = typeof search === "string" ? search.trim() : undefined;
+        const normalizedCustomerName =
+            typeof customerName === "string" ? customerName.trim() : undefined;
+        const normalizedCustomerPhone =
+            typeof customerPhone === "string" ? customerPhone.trim() : undefined;
+        const normalizedProductName =
+            typeof productName === "string" ? productName.trim() : undefined;
+
+        if (normalizedCustomerPhone && !/^[0-9()+\s-]+$/.test(normalizedCustomerPhone)) {
+            throw new ApiError(400, "customerPhone has invalid format");
+        }
+
         const { data, total } = await getSalesService({
             skip,
             take: limit,
@@ -119,6 +140,10 @@ export const getAllSales = async (req, res, next) => {
             startDate: parsedStartDate,
             endDate: parsedEndDate,
             profitFilter,
+            search: normalizedSearch,
+            customerName: normalizedCustomerName,
+            customerPhone: normalizedCustomerPhone,
+            productName: normalizedProductName,
         });
 
         return res.status(200).json(

@@ -122,7 +122,18 @@ export const createSale = async ({ customerId, saleDate, items }) => {
     }, { maxWait: 10000, timeout: 20000 });
 };
 
-export const getSales = async ({ skip, take, productId, startDate, endDate, profitFilter }) => {
+export const getSales = async ({
+    skip,
+    take,
+    productId,
+    productName,
+    startDate,
+    endDate,
+    profitFilter,
+    search,
+    customerName,
+    customerPhone,
+}) => {
     const andFilters = [];
 
     if (productId !== undefined) {
@@ -130,6 +141,18 @@ export const getSales = async ({ skip, take, productId, startDate, endDate, prof
             items: {
                 some: {
                     productId,
+                },
+            },
+        });
+    }
+
+    if (productName) {
+        andFilters.push({
+            items: {
+                some: {
+                    product: {
+                        name: { contains: productName, mode: "insensitive" },
+                    },
                 },
             },
         });
@@ -148,6 +171,53 @@ export const getSales = async ({ skip, take, productId, startDate, endDate, prof
         andFilters.push({ grossProfit: { gt: 0 } });
     } else if (profitFilter === "negative") {
         andFilters.push({ grossProfit: { lt: 0 } });
+    }
+
+    if (customerName) {
+        andFilters.push({
+            customer: {
+                name: { contains: customerName, mode: "insensitive" },
+            },
+        });
+    }
+
+    if (customerPhone) {
+        andFilters.push({
+            customer: {
+                phone: { contains: customerPhone, mode: "insensitive" },
+            },
+        });
+    }
+
+    if (search) {
+        const orFilters = [
+            {
+                customer: {
+                    name: { contains: search, mode: "insensitive" },
+                },
+            },
+            {
+                customer: {
+                    phone: { contains: search, mode: "insensitive" },
+                },
+            },
+            {
+                items: {
+                    some: {
+                        product: {
+                            name: { contains: search, mode: "insensitive" },
+                        },
+                    },
+                },
+            },
+        ];
+
+        const numericSearch = Number.parseInt(search, 10);
+        if (!Number.isNaN(numericSearch) && String(numericSearch) === search.trim()) {
+            orFilters.push({ id: numericSearch });
+        }
+
+        andFilters.push({ OR: orFilters });
     }
 
     const where = andFilters.length > 0 ? { AND: andFilters } : undefined;
