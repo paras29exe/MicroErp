@@ -42,16 +42,64 @@ export const addVendor = async (req, res, next) => {
 
 export const getVendors = async (req, res, next) => {
   try {
-    const { name, email } = req.query;
+    const {
+      search,
+      name,
+      email,
+      phone,
+      page: pageQuery,
+      pageSize: pageSizeQuery,
+    } = req.query;
+
+    const page = pageQuery === undefined ? 1 : Number(pageQuery);
+    const pageSize = pageSizeQuery === undefined ? 20 : Number(pageSizeQuery);
+
+    if (!Number.isInteger(page) || page < 1) {
+      throw new ApiError(400, "Page must be a positive integer");
+    }
+
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+      throw new ApiError(400, "Page size must be an integer between 1 and 100");
+    }
 
     const where = {};
-    if (name) where.name = { contains: name, mode: "insensitive" };
-    if (email) where.email = email;
 
-    const data = await prisma.vendor.findMany({
-      where: Object.keys(where).length ? where : undefined,
-      orderBy: { createdAt: "desc" },
-    });
+    const searchTerm = typeof search === "string" ? search.trim() : "";
+    if (searchTerm) {
+      where.OR = [
+        { name: { contains: searchTerm, mode: "insensitive" } },
+        { email: { contains: searchTerm, mode: "insensitive" } },
+        { phone: { contains: searchTerm } },
+        { address: { contains: searchTerm, mode: "insensitive" } },
+      ];
+    }
+
+    if (typeof name === "string" && name.trim()) where.name = { contains: name.trim(), mode: "insensitive" };
+    if (typeof email === "string" && email.trim()) where.email = email.trim();
+    if (typeof phone === "string" && phone.trim()) where.phone = { contains: phone.trim() };
+
+    const finalWhere = Object.keys(where).length ? where : undefined;
+    const skip = (page - 1) * pageSize;
+
+    const [items, total] = await Promise.all([
+      prisma.vendor.findMany({
+        where: finalWhere,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: pageSize,
+      }),
+      prisma.vendor.count({ where: finalWhere }),
+    ]);
+
+    const data = {
+      items,
+      meta: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
 
     return res.status(200).json(new ApiResponse(200, "Vendors retrieved successfully", data));
   } catch (err) {

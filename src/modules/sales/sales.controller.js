@@ -3,6 +3,7 @@ import {
     createSale as createSaleService,
     getSales as getSalesService,
     getSaleById as getSaleByIdService,
+    removeSale as removeSaleService,
 } from "./sales.service.js";
 
 export const createSale = async (req, res, next) => {
@@ -70,7 +71,7 @@ export const createSale = async (req, res, next) => {
 export const getAllSales = async (req, res, next) => {
     try {
         const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
-        const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 10));
+        const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
         const skip = (page - 1) * limit;
 
         const {
@@ -82,6 +83,8 @@ export const getAllSales = async (req, res, next) => {
             search,
             customerName,
             customerPhone,
+            sortBy = "saleDate",
+            sortOrder = "desc",
         } = req.query;
 
         let parsedStartDate;
@@ -133,6 +136,16 @@ export const getAllSales = async (req, res, next) => {
             throw new ApiError(400, "customerPhone has invalid format");
         }
 
+        const validSortFields = ["saleDate", "grossSales", "grossProfit", "totalAmount", "totalCogs", "createdAt", "customerName"];
+        if (!validSortFields.includes(sortBy)) {
+            throw new ApiError(400, `sortBy must be one of: ${validSortFields.join(", ")}`);
+        }
+
+        const normalizedSortOrder = String(sortOrder).toLowerCase();
+        if (!['asc', 'desc'].includes(normalizedSortOrder)) {
+            throw new ApiError(400, "sortOrder must be 'asc' or 'desc'");
+        }
+
         const { data, total } = await getSalesService({
             skip,
             take: limit,
@@ -144,6 +157,8 @@ export const getAllSales = async (req, res, next) => {
             customerName: normalizedCustomerName,
             customerPhone: normalizedCustomerPhone,
             productName: normalizedProductName,
+            sortBy,
+            sortOrder: normalizedSortOrder,
         });
 
         return res.status(200).json(
@@ -167,6 +182,20 @@ export const getSaleById = async (req, res, next) => {
         if (!data) throw new ApiError(404, "Sale not found");
 
         return res.status(200).json(new ApiResponse(200, "Sale retrieved successfully", data));
+    } catch (err) {
+        next(err);
+    }
+};
+
+export const removeSale = async (req, res, next) => {
+    try {
+        const id = Number.parseInt(req.params.id, 10);
+        if (!Number.isInteger(id) || id <= 0) {
+            throw new ApiError(400, "Invalid sale ID");
+        }
+
+        const deleted = await removeSaleService(id);
+        return res.status(200).json(new ApiResponse(200, "Sale deleted successfully", deleted));
     } catch (err) {
         next(err);
     }

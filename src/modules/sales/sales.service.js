@@ -1,5 +1,5 @@
 import prisma from "../../config/db.js";
-import { decreaseStock } from "../inventory/inventory.service.js";
+import { decreaseStock, increaseStock } from "../inventory/inventory.service.js";
 import { ApiError } from "../../utils/response.js";
 
 export const createSale = async ({ customerId, saleDate, items }) => {
@@ -133,6 +133,8 @@ export const getSales = async ({
     search,
     customerName,
     customerPhone,
+    sortBy = "saleDate",
+    sortOrder = "desc",
 }) => {
     const andFilters = [];
 
@@ -222,12 +224,19 @@ export const getSales = async ({
 
     const where = andFilters.length > 0 ? { AND: andFilters } : undefined;
 
+    let orderBy;
+    if (sortBy === "customerName") {
+        orderBy = [{ customer: { name: sortOrder } }, { id: "desc" }];
+    } else {
+        orderBy = [{ [sortBy]: sortOrder }, { id: "desc" }];
+    }
+
     const [data, total] = await Promise.all([
         prisma.sale.findMany({
             where,
             skip,
             take,
-            orderBy: { saleDate: "desc" },
+            orderBy,
             include: {
                 customer: true,
                 items: { include: { product: true } },
@@ -247,4 +256,61 @@ export const getSaleById = async (id) => {
             items: { include: { product: true } },
         },
     });
+};
+
+export const removeSale = async (saleId) => {
+    return prisma.$transaction(async (tx) => {
+        const sale = await tx.sale.findUnique({
+            where: { id: saleId },
+            include: {
+                items: {
+                    select: {
+                        productId: true,
+                        quantity: true,
+                        unitCost: true,
+                    },
+                },
+            },
+        });
+
+        if (!sale) {
+            throw new ApiError(404, "Sale not found");
+        }
+
+        const restoreByProduct = new Map();
+        for (const item of sale.items) {
+            const previous = restoreByProduct.get(item.productId) || { quantity: 0, unitCost: 0 };
+            const nextQuantity = previous.quantity + item.quantity;
+            const weightedCost =
+                nextQuantity > 0
+                    ? ((previous.unitCost * previous.quantity) + (item.unitCost * item.quantity)) / nextQuantity
+                    : 0;
+
+            restoreByProduct.set(item.productId, {
+                quantity: nextQuantity,
+                unitCost: weightedCost,
+            });
+        }
+
+        await Promise.all(
+            [...restoreByProduct.entries()].map(([productId, stock]) =>
+                increaseStock(
+                    productId,
+                    stock.quantity,
+                    "SALE_DELETE",
+                    `SALE-${saleId}`,
+                    tx,
+                    {
+                        unitCost: stock.unitCost,
+                        reason: `Sale ${saleId} deleted - stock restored`,
+                    }
+                )
+            )
+        );
+
+        await tx.saleItem.deleteMany({ where: { saleId } });
+        await tx.sale.delete({ where: { id: saleId } });
+
+        return { id: saleId };
+    }, { maxWait: 10000, timeout: 20000 });
 };

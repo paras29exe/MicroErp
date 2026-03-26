@@ -41,20 +41,52 @@ export const addCustomer = async (req, res, next) => {
 
 export const getCustomers = async (req, res, next) => {
     try {
-        const { search } = req.query;
+        const { search, page: pageQuery, pageSize: pageSizeQuery } = req.query;
+        const page = pageQuery === undefined ? 1 : Number(pageQuery);
+        const pageSize = pageSizeQuery === undefined ? 20 : Number(pageSizeQuery);
 
-        const data = await prisma.customer.findMany({
-            where: search
-                ? {
-                      OR: [
-                          { name: { contains: search, mode: "insensitive" } },
-                          { email: { contains: search, mode: "insensitive" } },
-                          { address: { contains: search, mode: "insensitive" } },
-                      ],
-                  }
-                : undefined,
-            orderBy: { createdAt: "desc" },
-        });
+        if (!Number.isInteger(page) || page < 1) {
+            throw new ApiError(400, "Page must be a positive integer");
+        }
+
+        if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+            throw new ApiError(400, "Page size must be an integer between 1 and 100");
+        }
+
+        const searchTerm = typeof search === "string" ? search.trim() : "";
+
+        const where = searchTerm
+            ? {
+                  OR: [
+                      { name: { contains: searchTerm, mode: "insensitive" } },
+                      { email: { contains: searchTerm, mode: "insensitive" } },
+                      { address: { contains: searchTerm, mode: "insensitive" } },
+                      { phone: { contains: searchTerm } },
+                  ],
+              }
+            : undefined;
+
+        const skip = (page - 1) * pageSize;
+
+        const [items, total] = await Promise.all([
+            prisma.customer.findMany({
+                where,
+                orderBy: { createdAt: "desc" },
+                skip,
+                take: pageSize,
+            }),
+            prisma.customer.count({ where }),
+        ]);
+
+        const data = {
+            items,
+            meta: {
+                page,
+                pageSize,
+                total,
+                totalPages: Math.ceil(total / pageSize),
+            },
+        };
 
         return res.status(200).json(new ApiResponse(200, "Customers retrieved successfully", data));
     } catch (err) {
