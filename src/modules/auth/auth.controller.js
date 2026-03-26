@@ -58,7 +58,7 @@ export const login = async (req, res, next) => {
 
 		const isMatch = await bcrypt.compare(password, user.passwordHash);
 		if (!isMatch) {
-			throw new ApiError(401, "Invalid credentials");
+			throw new ApiError(401, "Wrong password entered");
 		}
 
 		const accessToken = createAccessToken({

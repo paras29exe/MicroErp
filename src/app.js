@@ -9,7 +9,27 @@ import { ApiResponse, ApiError } from './utils/response.js';
 
 const app = express();
 
-app.use(cors());
+const defaultAllowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+];
+
+const allowedOrigins = process.env.FRONTEND_ORIGIN
+  ? process.env.FRONTEND_ORIGIN.split(',').map((origin) => origin.trim())
+  : defaultAllowedOrigins;
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new ApiError(403, `CORS blocked for origin: ${origin}`));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 app.use(cookieParser());
 

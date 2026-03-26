@@ -35,25 +35,25 @@ export const buildDateRange = (from, to) => {
 export const getDashboardKpis = async (startDate, endDate) => {
 	const [
 		salesCount,
-		salesAggRaw,
+		salesAgg,
 		purchasesCount,
 		purchasesAmount,
 		pendingPurchasesCount,
 		pendingPurchasesAmount,
-		productionCount,
+		productionEntriesCount,
+		distinctProducedProducts,
 		productionQuantity,
-		inventoryData,
+		totalTrackedProducts,
+		lowStockProducts,
+		outOfStockProducts,
 		activeUsers,
 		inactiveUsers
 	] = await Promise.all([
 		prisma.sale.count({ where: { saleDate: { gte: startDate, lte: endDate } } }),
-		prisma.$queryRaw`
-			SELECT 
-				SUM("totalAmount")::float as "totalAmount",
-				SUM("grossProfit")::float as "grossProfit"
-			FROM sales
-			WHERE "saleDate" >= ${startDate} AND "saleDate" <= ${endDate}
-		`,
+		prisma.sale.aggregate({
+			_sum: { totalAmount: true, grossProfit: true },
+			where: { saleDate: { gte: startDate, lte: endDate } }
+		}),
 		prisma.purchase.count({ where: { purchaseDate: { gte: startDate, lte: endDate } } }),
 		prisma.purchase.aggregate({
 			_sum: { totalAmount: true },
@@ -73,25 +73,60 @@ export const getDashboardKpis = async (startDate, endDate) => {
 			}
 		}),
 		prisma.production.count({ where: { productionDate: { gte: startDate, lte: endDate } } }),
+		prisma.production.groupBy({
+			by: ['productId'],
+			where: { productionDate: { gte: startDate, lte: endDate } }
+		}),
 		prisma.production.aggregate({
 			_sum: { quantity: true },
 			where: { productionDate: { gte: startDate, lte: endDate } }
 		}),
-		prisma.inventory.findMany({ include: { product: true } }),
+		prisma.inventory.count(),
+		prisma.inventory.count({
+			where: {
+				stockQuantity: {
+					gt: 0,
+					lte: prisma.inventory.fields.reorderLevel,
+				}
+			}
+		}),
+		prisma.inventory.count({ where: { stockQuantity: { lte: 0 } } }),
 		prisma.user.count({ where: { isDeleted: false, isActive: true } }),
 		prisma.user.count({ where: { isDeleted: false, isActive: false } })
 	]);
 
-	const lowStockProducts = inventoryData.filter(i => i.stockQuantity > 0 && i.stockQuantity <= i.reorderLevel).length;
-	const outOfStockProducts = inventoryData.filter(i => i.stockQuantity === 0).length;
-
-	const salesData = salesAggRaw[0] || { totalAmount: 0, grossProfit: 0 };
-
 	return {
+		definitions: {
+			sales: {
+				count: 'Number of sales orders in selected period',
+				totalAmount: 'Total billed amount from sales orders',
+				grossProfit: 'Total gross profit from sales orders'
+			},
+			purchases: {
+				count: 'Number of purchase orders in selected period',
+				totalAmount: 'Total purchase amount in selected period',
+				pendingCount: 'Number of purchase orders with pending payment',
+				pendingAmount: 'Total pending purchase payment amount'
+			},
+			production: {
+				distinctProductsCount: 'Number of distinct products produced',
+				entriesCount: 'Number of production entries logged',
+				totalQuantity: 'Total units produced across all entries'
+			},
+			inventory: {
+				totalProducts: 'Number of products tracked in inventory',
+				lowStockProducts: 'Products below reorder threshold but above zero stock',
+				outOfStockProducts: 'Products with zero or below stock'
+			},
+			users: {
+				active: 'Active users available in the system',
+				inactive: 'Inactive users in the system'
+			}
+		},
 		sales: {
 			count: salesCount,
-			totalAmount: salesData.totalAmount || 0,
-			grossProfit: salesData.grossProfit || 0
+			totalAmount: salesAgg._sum.totalAmount || 0,
+			grossProfit: salesAgg._sum.grossProfit || 0
 		},
 		purchases: {
 			count: purchasesCount,
@@ -100,11 +135,12 @@ export const getDashboardKpis = async (startDate, endDate) => {
 			pendingAmount: pendingPurchasesAmount._sum.totalAmount || 0
 		},
 		production: {
-			count: productionCount,
+			distinctProductsCount: distinctProducedProducts.length,
+			entriesCount: productionEntriesCount,
 			totalQuantity: productionQuantity._sum.quantity || 0
 		},
 		inventory: {
-			totalProducts: inventoryData.length,
+			totalProducts: totalTrackedProducts,
 			lowStockProducts,
 			outOfStockProducts
 		},
@@ -175,31 +211,58 @@ export const getDashboardTrends = async (startDate, endDate) => {
 export const getDashboardAlerts = async (startDate, endDate) => {
 	const [inventoryData, recentSales, recentPurchases, recentProductions] = await Promise.all([
 		prisma.inventory.findMany({
-			include: { product: true },
 			where: {
 				OR: [
 					{ stockQuantity: { lte: 0 } },
 					{ stockQuantity: { lte: prisma.inventory.fields.reorderLevel } }
 				]
+			},
+			select: {
+				productId: true,
+				stockQuantity: true,
+				reorderLevel: true,
+				product: {
+					select: {
+						name: true
+					}
+				}
 			}
 		}),
 		prisma.sale.findMany({
 			where: { saleDate: { gte: startDate, lte: endDate } },
 			orderBy: { saleDate: 'desc' },
 			take: 10,
-			include: { customer: { select: { name: true } } }
+			select: {
+				id: true,
+				saleDate: true,
+				totalAmount: true,
+				grossProfit: true,
+				customer: { select: { name: true } }
+			}
 		}),
 		prisma.purchase.findMany({
 			where: { purchaseDate: { gte: startDate, lte: endDate } },
 			orderBy: { purchaseDate: 'desc' },
 			take: 10,
-			include: { vendor: { select: { name: true } } }
+			select: {
+				id: true,
+				purchaseDate: true,
+				totalAmount: true,
+				paymentStatus: true,
+				vendor: { select: { name: true } }
+			}
 		}),
 		prisma.production.findMany({
 			where: { productionDate: { gte: startDate, lte: endDate } },
 			orderBy: { productionDate: 'desc' },
 			take: 10,
-			include: { product: { select: { name: true } } }
+			select: {
+				id: true,
+				productionDate: true,
+				quantity: true,
+				totalCost: true,
+				product: { select: { name: true } }
+			}
 		})
 	]);
 
@@ -213,7 +276,21 @@ export const getDashboardAlerts = async (startDate, endDate) => {
 			shortBy: Math.max(0, i.reorderLevel - i.stockQuantity)
 		}));
 
+	const outOfStockProducts = lowStockAlerts.filter((item) => item.stockQuantity <= 0).length;
+	const mostCritical = lowStockAlerts.reduce((current, item) => {
+		if (!current || item.shortBy > current.shortBy) {
+			return item;
+		}
+
+		return current;
+	}, null);
+
 	return {
+		summary: {
+			lowStockProducts: lowStockAlerts.length,
+			outOfStockProducts,
+			criticalProduct: mostCritical,
+		},
 		lowStock: lowStockAlerts,
 		recentSales,
 		recentPurchases,

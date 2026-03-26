@@ -78,6 +78,9 @@ export const getPurchases = async ({
     skip,
     take,
     search,
+    vendorName,
+    vendorPhone,
+    productName,
     paymentStatus,
     startDate,
     endDate,
@@ -110,11 +113,44 @@ export const getPurchases = async ({
         });
     }
 
+    if (vendorName) {
+        andFilters.push({
+            vendor: {
+                name: { contains: vendorName, mode: "insensitive" },
+            },
+        });
+    }
+
+    if (vendorPhone) {
+        andFilters.push({
+            vendor: {
+                phone: { contains: vendorPhone, mode: "insensitive" },
+            },
+        });
+    }
+
+    if (productName) {
+        andFilters.push({
+            items: {
+                some: {
+                    product: {
+                        name: { contains: productName, mode: "insensitive" },
+                    },
+                },
+            },
+        });
+    }
+
     if (search) {
         const orFilters = [
             {
                 vendor: {
                     name: { contains: search, mode: "insensitive" },
+                },
+            },
+            {
+                vendor: {
+                    phone: { contains: search, mode: "insensitive" },
                 },
             },
             {

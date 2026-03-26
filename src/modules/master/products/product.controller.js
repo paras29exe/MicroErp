@@ -57,16 +57,64 @@ export const addProduct = async (req, res, next) => {
 
 export const getProducts = async (req, res, next) => {
     try {
-        const { category } = req.query;
+        const { category, search, name, page: pageQuery, pageSize: pageSizeQuery } = req.query;
 
         if (category && !VALID_CATEGORIES.includes(category)) {
             throw new ApiError(400, `Category must be one of: ${VALID_CATEGORIES.join(", ")}`);
         }
 
-        const data = await prisma.product.findMany({
-            where: category ? { category } : undefined,
-            orderBy: { createdAt: "desc" },
-        });
+        const page = pageQuery === undefined ? 1 : Number(pageQuery);
+        const pageSize = pageSizeQuery === undefined ? 20 : Number(pageSizeQuery);
+
+        if (!Number.isInteger(page) || page < 1) {
+            throw new ApiError(400, "Page must be a positive integer");
+        }
+
+        if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+            throw new ApiError(400, "Page size must be an integer between 1 and 100");
+        }
+
+        const rawNameQuery = typeof search === "string" && search.trim() !== ""
+            ? search
+            : typeof name === "string"
+                ? name
+                : "";
+        const nameQuery = rawNameQuery.trim();
+
+        const where = {
+            ...(category ? { category } : {}),
+            ...(nameQuery
+                ? {
+                      name: {
+                          contains: nameQuery,
+                          mode: "insensitive",
+                      },
+                  }
+                : {}),
+        };
+
+        const finalWhere = Object.keys(where).length ? where : undefined;
+        const skip = (page - 1) * pageSize;
+
+        const [items, total] = await Promise.all([
+            prisma.product.findMany({
+                where: finalWhere,
+                orderBy: { createdAt: "desc" },
+                skip,
+                take: pageSize,
+            }),
+            prisma.product.count({ where: finalWhere }),
+        ]);
+
+        const data = {
+            items,
+            meta: {
+                page,
+                pageSize,
+                total,
+                totalPages: Math.ceil(total / pageSize),
+            },
+        };
 
         return res.status(200).json(new ApiResponse(200, "Products retrieved successfully", data));
     } catch (err) {
@@ -175,6 +223,62 @@ export const removeProduct = async (req, res, next) => {
         await prisma.product.delete({ where: { id } });
 
         return res.status(200).json(new ApiResponse(200, "Product deleted successfully"));
+    } catch (err) {
+        next(err);
+    }
+};
+
+export const getFinishedProductsWithStock = async (req, res, next) => {
+    try {
+        const rawSearch = typeof req.query.search === "string" ? req.query.search : "";
+        const search = rawSearch.trim();
+
+        const products = await prisma.product.findMany({
+            where: {
+                category: "finished",
+                ...(search
+                    ? {
+                          name: {
+                              contains: search,
+                              mode: "insensitive",
+                          },
+                      }
+                    : {}),
+            },
+            orderBy: { name: "asc" },
+            include: {
+                inventory: {
+                    select: {
+                        stockQuantity: true,
+                        reorderLevel: true,
+                    },
+                },
+            },
+        });
+
+        const items = products.map((product) => {
+            const stockQuantity = product.inventory?.stockQuantity || 0;
+            const reorderLevel = product.inventory?.reorderLevel ?? product.restockLevel;
+            const stockStatus = stockQuantity <= 0
+                ? "out_of_stock"
+                : stockQuantity <= reorderLevel
+                    ? "low_stock"
+                    : "in_stock";
+
+            return {
+                id: product.id,
+                name: product.name,
+                category: product.category,
+                restockLevel: product.restockLevel,
+                stockQuantity,
+                reorderLevel,
+                stockStatus,
+            };
+        });
+
+        return res
+            .status(200)
+            .json(new ApiResponse(200, "Finished products with stock retrieved successfully", { items }));
     } catch (err) {
         next(err);
     }
