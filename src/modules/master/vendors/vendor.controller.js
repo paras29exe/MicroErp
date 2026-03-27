@@ -3,6 +3,7 @@ import { ApiResponse, ApiError } from "../../../utils/response.js";
 
 const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const isValidPhone = (value) => typeof value === "string" && value.trim() !== "" && /^[0-9()+\s-]+$/.test(value);
+const VALID_STATUS = ["active", "archived", "all"];
 
 export const addVendor = async (req, res, next) => {
   try {
@@ -21,7 +22,7 @@ export const addVendor = async (req, res, next) => {
     }
 
     if (email) {
-      const existing = await prisma.vendor.findUnique({ where: { email } });
+      const existing = await prisma.vendor.findFirst({ where: { email, isDeleted: false } });
       if (existing) throw new ApiError(409, "A vendor with this email already exists");
     }
 
@@ -47,6 +48,7 @@ export const getVendors = async (req, res, next) => {
       name,
       email,
       phone,
+      status = "active",
       page: pageQuery,
       pageSize: pageSizeQuery,
     } = req.query;
@@ -62,7 +64,14 @@ export const getVendors = async (req, res, next) => {
       throw new ApiError(400, "Page size must be an integer between 1 and 100");
     }
 
-    const where = {};
+    if (!VALID_STATUS.includes(status)) {
+      throw new ApiError(400, `Status must be one of: ${VALID_STATUS.join(", ")}`);
+    }
+
+    const where = {
+      ...(status === "active" ? { isDeleted: false } : {}),
+      ...(status === "archived" ? { isDeleted: true } : {}),
+    };
 
     const searchTerm = typeof search === "string" ? search.trim() : "";
     if (searchTerm) {
@@ -84,7 +93,7 @@ export const getVendors = async (req, res, next) => {
     const [items, total] = await Promise.all([
       prisma.vendor.findMany({
         where: finalWhere,
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ name: "asc" }, { id: "desc" }],
         skip,
         take: pageSize,
       }),
@@ -113,7 +122,7 @@ export const getVendor = async (req, res, next) => {
 
     if (isNaN(id)) throw new ApiError(400, "Invalid vendor ID");
 
-    const data = await prisma.vendor.findUnique({ where: { id } });
+    const data = await prisma.vendor.findFirst({ where: { id, isDeleted: false } });
     if (!data) throw new ApiError(404, "Vendor not found");
 
     return res.status(200).json(new ApiResponse(200, "Vendor retrieved successfully", data));
@@ -128,7 +137,7 @@ export const editVendor = async (req, res, next) => {
 
     if (isNaN(id)) throw new ApiError(400, "Invalid vendor ID");
 
-    const existing = await prisma.vendor.findUnique({ where: { id } });
+    const existing = await prisma.vendor.findFirst({ where: { id, isDeleted: false } });
     if (!existing) throw new ApiError(404, "Vendor not found");
 
     const { name, email, phone, address } = req.body;
@@ -146,7 +155,7 @@ export const editVendor = async (req, res, next) => {
     }
 
     if (email && email !== existing.email) {
-      const duplicate = await prisma.vendor.findUnique({ where: { email } });
+      const duplicate = await prisma.vendor.findFirst({ where: { email, isDeleted: false } });
       if (duplicate) throw new ApiError(409, "A vendor with this email already exists");
     }
 
@@ -172,15 +181,42 @@ export const removeVendor = async (req, res, next) => {
 
     if (isNaN(id)) throw new ApiError(400, "Invalid vendor ID");
 
-    const existing = await prisma.vendor.findUnique({ where: { id } });
+    const existing = await prisma.vendor.findFirst({ where: { id, isDeleted: false } });
     if (!existing) throw new ApiError(404, "Vendor not found");
 
-    const hasPurchases = await prisma.purchase.findFirst({ where: { vendorId: id } });
-    if (hasPurchases) throw new ApiError(409, "Cannot delete vendor with existing purchase records");
+    await prisma.vendor.update({
+      where: { id },
+      data: {
+        isDeleted: true,
+        deletedAt: new Date(),
+        email: null,
+      },
+    });
 
-    await prisma.vendor.delete({ where: { id } });
+    return res.status(200).json(new ApiResponse(200, "Vendor archived successfully"));
+  } catch (err) {
+    next(err);
+  }
+};
 
-    return res.status(200).json(new ApiResponse(200, "Vendor deleted successfully"));
+export const restoreVendor = async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+
+    if (isNaN(id)) throw new ApiError(400, "Invalid vendor ID");
+
+    const existing = await prisma.vendor.findFirst({ where: { id, isDeleted: true } });
+    if (!existing) throw new ApiError(404, "Archived vendor not found");
+
+    await prisma.vendor.update({
+      where: { id },
+      data: {
+        isDeleted: false,
+        deletedAt: null,
+      },
+    });
+
+    return res.status(200).json(new ApiResponse(200, "Vendor restored successfully"));
   } catch (err) {
     next(err);
   }

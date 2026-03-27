@@ -5,6 +5,7 @@ import {
     getLowStockProducts,
     adjustStock as adjustStockService,
     getInventorySummary,
+    getInventoryTransactions as getInventoryTransactionsService,
     updateReorderLevel as updateReorderLevelService,
 } from "./inventory.service.js";
 
@@ -19,8 +20,8 @@ export const getAllInventory = async (req, res, next) => {
             endDate,
             page = 1,
             limit = 10,
-            sortBy = "updatedAt",
-            sortOrder = "desc",
+            sortBy = "productName",
+            sortOrder = "asc",
         } = req.query;
 
         const pageNum = Math.max(1, Number.parseInt(page, 10) || 1);
@@ -159,6 +160,93 @@ export const getSummary = async (req, res, next) => {
         const data = await getInventorySummary();
 
         return res.status(200).json(new ApiResponse(200, "Inventory summary retrieved successfully", data));
+    } catch (err) {
+        next(err);
+    }
+};
+
+export const getTransactions = async (req, res, next) => {
+    try {
+        const {
+            page = 1,
+            limit = 20,
+            search,
+            productId,
+            transactionType,
+            startDate,
+            endDate,
+            sortBy = "transactionDate",
+            sortOrder = "desc",
+        } = req.query;
+
+        const pageNum = Math.max(1, Number.parseInt(page, 10) || 1);
+        const limitNum = Math.max(1, Number.parseInt(limit, 10) || 20);
+
+        let parsedProductId;
+        if (productId !== undefined) {
+            parsedProductId = Number.parseInt(productId, 10);
+            if (!Number.isInteger(parsedProductId) || parsedProductId <= 0) {
+                throw new ApiError(400, "productId must be a positive integer");
+            }
+        }
+
+        const validTransactionTypes = ["PURCHASE", "SALE", "PRODUCTION", "ADJUSTMENT"];
+        if (transactionType && !validTransactionTypes.includes(transactionType)) {
+            throw new ApiError(
+                400,
+                `transactionType must be one of: ${validTransactionTypes.join(", ")}`
+            );
+        }
+
+        let parsedStartDate;
+        if (startDate !== undefined) {
+            parsedStartDate = new Date(startDate);
+            if (Number.isNaN(parsedStartDate.getTime())) {
+                throw new ApiError(400, "startDate must be a valid date");
+            }
+        }
+
+        let parsedEndDate;
+        if (endDate !== undefined) {
+            parsedEndDate = new Date(endDate);
+            if (Number.isNaN(parsedEndDate.getTime())) {
+                throw new ApiError(400, "endDate must be a valid date");
+            }
+            parsedEndDate.setHours(23, 59, 59, 999);
+        }
+
+        if (parsedStartDate && parsedEndDate && parsedStartDate > parsedEndDate) {
+            throw new ApiError(400, "startDate must be before or equal to endDate");
+        }
+
+        const validSortFields = ["transactionDate", "quantity", "stockAfter", "productName"];
+        if (!validSortFields.includes(sortBy)) {
+            throw new ApiError(400, `sortBy must be one of: ${validSortFields.join(", ")}`);
+        }
+
+        const normalizedSortOrder = String(sortOrder).toLowerCase();
+        if (!["asc", "desc"].includes(normalizedSortOrder)) {
+            throw new ApiError(400, "sortOrder must be 'asc' or 'desc'");
+        }
+
+        const { data, total } = await getInventoryTransactionsService({
+            page: pageNum,
+            limit: limitNum,
+            search: typeof search === "string" ? search.trim() : undefined,
+            productId: parsedProductId,
+            transactionType,
+            startDate: parsedStartDate,
+            endDate: parsedEndDate,
+            sortBy,
+            sortOrder: normalizedSortOrder,
+        });
+
+        return res.status(200).json(
+            new ApiResponse(200, "Inventory transactions retrieved successfully", {
+                transactions: data,
+                meta: { total, page: pageNum, limit: limitNum },
+            })
+        );
     } catch (err) {
         next(err);
     }

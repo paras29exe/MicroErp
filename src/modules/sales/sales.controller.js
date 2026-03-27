@@ -79,6 +79,8 @@ export const getAllSales = async (req, res, next) => {
             productName,
             startDate,
             endDate,
+            minAmount,
+            maxAmount,
             profit,
             search,
             customerName,
@@ -106,6 +108,30 @@ export const getAllSales = async (req, res, next) => {
 
         if (parsedStartDate && parsedEndDate && parsedStartDate > parsedEndDate) {
             throw new ApiError(400, "startDate must be before or equal to endDate");
+        }
+
+        let parsedMinAmount;
+        if (minAmount !== undefined) {
+            parsedMinAmount = Number(minAmount);
+            if (Number.isNaN(parsedMinAmount) || parsedMinAmount < 0) {
+                throw new ApiError(400, "minAmount must be a non-negative number");
+            }
+        }
+
+        let parsedMaxAmount;
+        if (maxAmount !== undefined) {
+            parsedMaxAmount = Number(maxAmount);
+            if (Number.isNaN(parsedMaxAmount) || parsedMaxAmount < 0) {
+                throw new ApiError(400, "maxAmount must be a non-negative number");
+            }
+        }
+
+        if (
+            parsedMinAmount !== undefined &&
+            parsedMaxAmount !== undefined &&
+            parsedMinAmount > parsedMaxAmount
+        ) {
+            throw new ApiError(400, "minAmount must be less than or equal to maxAmount");
         }
 
         let profitFilter;
@@ -152,6 +178,8 @@ export const getAllSales = async (req, res, next) => {
             productId: parsedProductId,
             startDate: parsedStartDate,
             endDate: parsedEndDate,
+            minAmount: parsedMinAmount,
+            maxAmount: parsedMaxAmount,
             profitFilter,
             search: normalizedSearch,
             customerName: normalizedCustomerName,

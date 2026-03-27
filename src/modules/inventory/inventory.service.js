@@ -15,8 +15,8 @@ export const getInventory = async ({
     endDate,
     page,
     limit,
-    sortBy = "updatedAt",
-    sortOrder = "desc",
+    sortBy = "productName",
+    sortOrder = "asc",
 }) => {
     const where = {
         ...(search || category
@@ -108,6 +108,11 @@ export const getProductInventory = async (productId) => {
 
 export const getLowStockProducts = async () => {
     const inventoryRows = await prisma.inventory.findMany({
+        orderBy: {
+            product: {
+                name: "asc",
+            },
+        },
         include: {
             product: {
                 select: { id: true, name: true },
@@ -180,6 +185,65 @@ export const getInventorySummary = async () => {
     ).length;
 
     return { totalProducts, lowStockProducts, outOfStockProducts };
+};
+
+export const getInventoryTransactions = async ({
+    page,
+    limit,
+    search,
+    productId,
+    transactionType,
+    startDate,
+    endDate,
+    sortBy = "transactionDate",
+    sortOrder = "desc",
+}) => {
+    const where = {
+        ...(productId ? { productId } : {}),
+        ...(transactionType ? { transactionType } : {}),
+        ...(search
+            ? {
+                  product: {
+                      name: {
+                          contains: search,
+                          mode: "insensitive",
+                      },
+                  },
+              }
+            : {}),
+        ...(startDate || endDate
+            ? {
+                  transactionDate: {
+                      ...(startDate && { gte: startDate }),
+                      ...(endDate && { lte: endDate }),
+                  },
+              }
+            : {}),
+    };
+
+    const orderBy =
+        sortBy === "productName"
+            ? { product: { name: sortOrder } }
+            : { [sortBy]: sortOrder };
+
+    const skip = (page - 1) * limit;
+
+    const [rows, total] = await Promise.all([
+        prisma.inventoryTransaction.findMany({
+            where,
+            skip,
+            take: limit,
+            orderBy,
+            include: {
+                product: {
+                    select: { id: true, name: true, category: true },
+                },
+            },
+        }),
+        prisma.inventoryTransaction.count({ where }),
+    ]);
+
+    return { data: rows, total };
 };
 
 export const updateReorderLevel = async (productId, reorderLevel) => {

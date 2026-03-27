@@ -2,6 +2,7 @@ import prisma from "../../../config/db.js";
 import { ApiResponse, ApiError } from "../../../utils/response.js";
 
 const VALID_CATEGORIES = ["raw", "wip", "finished"];
+const VALID_STATUS = ["active", "archived", "all"];
 
 export const addProduct = async (req, res, next) => {
     try {
@@ -15,6 +16,7 @@ export const addProduct = async (req, res, next) => {
 
         const duplicateProduct = await prisma.product.findFirst({
             where: {
+                isDeleted: false,
                 name: {
                     equals: normalizedName,
                     mode: "insensitive",
@@ -57,10 +59,14 @@ export const addProduct = async (req, res, next) => {
 
 export const getProducts = async (req, res, next) => {
     try {
-        const { category, search, name, page: pageQuery, pageSize: pageSizeQuery } = req.query;
+        const { category, search, name, status = "active", page: pageQuery, pageSize: pageSizeQuery } = req.query;
 
         if (category && !VALID_CATEGORIES.includes(category)) {
             throw new ApiError(400, `Category must be one of: ${VALID_CATEGORIES.join(", ")}`);
+        }
+
+        if (!VALID_STATUS.includes(status)) {
+            throw new ApiError(400, `Status must be one of: ${VALID_STATUS.join(", ")}`);
         }
 
         const page = pageQuery === undefined ? 1 : Number(pageQuery);
@@ -91,6 +97,8 @@ export const getProducts = async (req, res, next) => {
                       },
                   }
                 : {}),
+            ...(status === "active" ? { isDeleted: false } : {}),
+            ...(status === "archived" ? { isDeleted: true } : {}),
         };
 
         const finalWhere = Object.keys(where).length ? where : undefined;
@@ -99,7 +107,7 @@ export const getProducts = async (req, res, next) => {
         const [items, total] = await Promise.all([
             prisma.product.findMany({
                 where: finalWhere,
-                orderBy: { createdAt: "desc" },
+                orderBy: [{ name: "asc" }, { id: "desc" }],
                 skip,
                 take: pageSize,
             }),
@@ -128,7 +136,7 @@ export const getProduct = async (req, res, next) => {
 
         if (isNaN(id)) throw new ApiError(400, "Invalid product ID");
 
-        const data = await prisma.product.findUnique({ where: { id } });
+        const data = await prisma.product.findFirst({ where: { id, isDeleted: false } });
         if (!data) throw new ApiError(404, "Product not found");
 
         return res.status(200).json(new ApiResponse(200, "Product retrieved successfully", data));
@@ -143,7 +151,7 @@ export const editProduct = async (req, res, next) => {
 
         if (isNaN(id)) throw new ApiError(400, "Invalid product ID");
 
-        const existing = await prisma.product.findUnique({ where: { id } });
+        const existing = await prisma.product.findFirst({ where: { id, isDeleted: false } });
         if (!existing) throw new ApiError(404, "Product not found");
 
         const { name, description, category, restockLevel } = req.body;
@@ -158,6 +166,7 @@ export const editProduct = async (req, res, next) => {
             const duplicateProduct = await prisma.product.findFirst({
                 where: {
                     id: { not: id },
+                    isDeleted: false,
                     name: {
                         equals: normalizedName,
                         mode: "insensitive",
@@ -203,26 +212,57 @@ export const removeProduct = async (req, res, next) => {
 
         if (isNaN(id)) throw new ApiError(400, "Invalid product ID");
 
-        const existing = await prisma.product.findUnique({ where: { id } });
+        const existing = await prisma.product.findFirst({ where: { id, isDeleted: false } });
         if (!existing) throw new ApiError(404, "Product not found");
 
-        const [hasPurchaseItems, hasSaleItems, hasBOMs, hasBOMItems, hasProductions, hasInventoryTransactions, hasInventory] = await Promise.all([
-            prisma.purchaseItem.findFirst({ where: { productId: id }, select: { id: true } }),
-            prisma.saleItem.findFirst({ where: { productId: id }, select: { id: true } }),
-            prisma.bOM.findFirst({ where: { productId: id }, select: { id: true } }),
-            prisma.bOMItem.findFirst({ where: { rawMaterialId: id }, select: { id: true } }),
-            prisma.production.findFirst({ where: { productId: id }, select: { id: true } }),
-            prisma.inventoryTransaction.findFirst({ where: { productId: id }, select: { id: true } }),
-            prisma.inventory.findUnique({ where: { productId: id }, select: { id: true } }),
-        ]);
+        await prisma.product.update({
+            where: { id },
+            data: {
+                isDeleted: true,
+                deletedAt: new Date(),
+            },
+        });
 
-        if (hasPurchaseItems || hasSaleItems || hasBOMs || hasBOMItems || hasProductions || hasInventoryTransactions || hasInventory) {
-            throw new ApiError(409, "Cannot delete product with existing dependent records");
+        return res.status(200).json(new ApiResponse(200, "Product archived successfully"));
+    } catch (err) {
+        next(err);
+    }
+};
+
+export const restoreProduct = async (req, res, next) => {
+    try {
+        const id = parseInt(req.params.id);
+
+        if (isNaN(id)) throw new ApiError(400, "Invalid product ID");
+
+        const archivedProduct = await prisma.product.findFirst({ where: { id, isDeleted: true } });
+        if (!archivedProduct) throw new ApiError(404, "Archived product not found");
+
+        const duplicateActive = await prisma.product.findFirst({
+            where: {
+                id: { not: id },
+                isDeleted: false,
+                name: {
+                    equals: archivedProduct.name,
+                    mode: "insensitive",
+                },
+            },
+            select: { id: true },
+        });
+
+        if (duplicateActive) {
+            throw new ApiError(409, "Cannot restore product because an active product with the same name already exists");
         }
 
-        await prisma.product.delete({ where: { id } });
+        await prisma.product.update({
+            where: { id },
+            data: {
+                isDeleted: false,
+                deletedAt: null,
+            },
+        });
 
-        return res.status(200).json(new ApiResponse(200, "Product deleted successfully"));
+        return res.status(200).json(new ApiResponse(200, "Product restored successfully"));
     } catch (err) {
         next(err);
     }
@@ -236,6 +276,7 @@ export const getFinishedProductsWithStock = async (req, res, next) => {
         const products = await prisma.product.findMany({
             where: {
                 category: "finished",
+                isDeleted: false,
                 ...(search
                     ? {
                           name: {
@@ -251,6 +292,7 @@ export const getFinishedProductsWithStock = async (req, res, next) => {
                     select: {
                         stockQuantity: true,
                         reorderLevel: true,
+                        avgCost: true,
                     },
                 },
             },
@@ -273,6 +315,7 @@ export const getFinishedProductsWithStock = async (req, res, next) => {
                 stockQuantity,
                 reorderLevel,
                 stockStatus,
+                unitPrice: product.inventory?.avgCost ?? null,
             };
         });
 

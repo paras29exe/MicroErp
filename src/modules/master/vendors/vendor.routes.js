@@ -5,6 +5,7 @@ import {
   getVendor,
   getVendors,
   removeVendor,
+  restoreVendor,
 } from "./vendor.controller.js";
 import { authorizePermission } from "../../../middleware/role.middleware.js";
 
@@ -40,6 +41,11 @@ router.delete(
   "/delete-vendor/:id",
   authorizePermission("master:delete"),
   removeVendor
+);
+router.patch(
+  "/restore-vendor/:id",
+  authorizePermission("master:update"),
+  restoreVendor
 );
 
 export default router;
