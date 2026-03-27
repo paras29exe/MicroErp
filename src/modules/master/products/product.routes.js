@@ -5,6 +5,7 @@ import {
 	getProduct,
 	editProduct,
 	removeProduct,
+	restoreProduct,
 	getFinishedProductsWithStock,
 } from "./product.controller.js";
 import { authorizePermission } from "../../../middleware/role.middleware.js";
@@ -46,6 +47,11 @@ router.delete(
 	"/delete-product/:id",
 	authorizePermission("master:delete"),
 	removeProduct
+);
+router.patch(
+	"/restore-product/:id",
+	authorizePermission("master:update"),
+	restoreProduct
 );
 
 export default router;

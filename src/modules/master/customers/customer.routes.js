@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { addCustomer, getCustomers, getCustomer, editCustomer, removeCustomer } from "./customer.controller.js";
+import { addCustomer, getCustomers, getCustomer, editCustomer, removeCustomer, restoreCustomer } from "./customer.controller.js";
 import { authorizePermission } from "../../../middleware/role.middleware.js";
 
 const router = Router();
@@ -34,6 +34,11 @@ router.delete(
 	"/delete-customer/:id",
 	authorizePermission("master:delete"),
 	removeCustomer
+);
+router.patch(
+	"/restore-customer/:id",
+	authorizePermission("master:update"),
+	restoreCustomer
 );
 
 export default router;

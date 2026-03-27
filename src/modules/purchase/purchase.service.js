@@ -6,8 +6,8 @@ export const createPurchase = async ({ vendorId, purchaseDate, paymentStatus, it
     const totalAmount = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
 
     return prisma.$transaction(async (tx) => {
-        const vendor = await tx.vendor.findUnique({
-            where: { id: vendorId },
+        const vendor = await tx.vendor.findFirst({
+            where: { id: vendorId, isDeleted: false },
             select: { id: true },
         });
 
@@ -17,7 +17,7 @@ export const createPurchase = async ({ vendorId, purchaseDate, paymentStatus, it
 
         const uniqueProductIds = [...new Set(items.map((item) => item.productId))];
         const existingProducts = await tx.product.findMany({
-            where: { id: { in: uniqueProductIds } },
+            where: { id: { in: uniqueProductIds }, isDeleted: false },
             select: { id: true },
         });
 

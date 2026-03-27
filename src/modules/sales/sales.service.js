@@ -9,12 +9,12 @@ export const createSale = async ({ customerId, saleDate, items }) => {
         const uniqueProductIds = [...new Set(items.map((item) => item.productId))];
 
         const [customer, products, inventories] = await Promise.all([
-            tx.customer.findUnique({
-                where: { id: customerId },
+            tx.customer.findFirst({
+                where: { id: customerId, isDeleted: false },
                 select: { id: true },
             }),
             tx.product.findMany({
-                where: { id: { in: uniqueProductIds } },
+                where: { id: { in: uniqueProductIds }, isDeleted: false },
                 select: { id: true, category: true },
             }),
             tx.inventory.findMany({
@@ -129,6 +129,8 @@ export const getSales = async ({
     productName,
     startDate,
     endDate,
+    minAmount,
+    maxAmount,
     profitFilter,
     search,
     customerName,
@@ -165,6 +167,15 @@ export const getSales = async ({
             saleDate: {
                 ...(startDate && { gte: startDate }),
                 ...(endDate && { lte: endDate }),
+            },
+        });
+    }
+
+    if (minAmount !== undefined || maxAmount !== undefined) {
+        andFilters.push({
+            totalAmount: {
+                ...(minAmount !== undefined && { gte: minAmount }),
+                ...(maxAmount !== undefined && { lte: maxAmount }),
             },
         });
     }
