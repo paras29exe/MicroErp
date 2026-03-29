@@ -21,6 +21,17 @@ enum UserRole {
   ACCOUNTANT
 }
 
+enum UserAuditAction {
+  USER_CREATED
+  USER_UPDATED
+  ROLE_CHANGED
+  USER_DEACTIVATED
+  USER_ACTIVATED
+  USER_DELETED
+  PROFILE_UPDATED
+  PASSWORD_CHANGED
+}
+
 model User {
   id           Int      @id @default(autoincrement())
   employeeId   String
@@ -37,7 +48,26 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @default(now()) @updatedAt
 
+  auditLogs    UserAudit[] @relation("UserAuditTarget")
+  auditActions UserAudit[] @relation("UserAuditActor")
+
   @@map("users")
+}
+
+model UserAudit {
+  id          Int             @id @default(autoincrement())
+  userId      Int
+  actorUserId Int?
+  action      UserAuditAction
+  details     Json?
+  createdAt   DateTime        @default(now())
+
+  user  User  @relation("UserAuditTarget", fields: [userId], references: [id])
+  actor User? @relation("UserAuditActor", fields: [actorUserId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("user_audits")
 }
 
 enum ProductCategory {
