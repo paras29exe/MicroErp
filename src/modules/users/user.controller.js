@@ -4,6 +4,7 @@ import {
 	createUser as createUserService,
 	getUsersWithQuery as getUsersWithQueryService,
 	getUserById as getUserByIdService,
+	getUserByIdAnyState as getUserByIdAnyStateService,
 	getUserByEmail as getUserByEmailService,
 	updateUser as updateUserService,
 	deactivateUser as deactivateUserService,
@@ -128,7 +129,7 @@ export const getUsers = async (req, res, next) => {
 				? req.query.role.trim().toUpperCase()
 				: undefined;
 		const status =
-			typeof req.query.status === "string" && ["all", "active", "inactive"].includes(req.query.status)
+			typeof req.query.status === "string" && ["all", "active", "inactive", "deleted"].includes(req.query.status)
 				? req.query.status
 				: "all";
 		const sortBy =
@@ -161,7 +162,7 @@ export const getUserById = async (req, res, next) => {
 		const id = parseInt(req.params.id);
 		if (Number.isNaN(id)) throw new ApiError(400, "Invalid user ID");
 
-		const data = await getUserByIdService(id);
+		const data = await getUserByIdAnyStateService(id);
 		if (!data) throw new ApiError(404, "User not found");
 
 		return res
@@ -467,7 +468,7 @@ export const getUserAuditLogs = async (req, res, next) => {
 		const id = parseInt(req.params.id);
 		if (Number.isNaN(id)) throw new ApiError(400, "Invalid user ID");
 
-		const existingUser = await getUserByIdService(id);
+		const existingUser = await getUserByIdAnyStateService(id);
 		if (!existingUser) throw new ApiError(404, "User not found");
 
 		const page = parsePositiveInt(req.query.page, 1);

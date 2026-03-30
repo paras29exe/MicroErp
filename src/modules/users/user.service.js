@@ -7,7 +7,9 @@ const USER_SELECT = {
 	email: true,
 	role: true,
 	isActive: true,
+	isDeleted: true,
 	deactivatedAt: true,
+	deletedAt: true,
 	createdAt: true,
 	updatedAt: true,
 };
@@ -50,7 +52,15 @@ export const getUsersWithQuery = async ({
 	const safePage = Number.isInteger(page) && page > 0 ? page : 1;
 	const safePageSize = Number.isInteger(pageSize) && pageSize > 0 ? Math.min(pageSize, 100) : 20;
 
-	const where = { isDeleted: false };
+	const where = {};
+
+	if (status === "deleted") {
+		where.isDeleted = true;
+	}
+
+	if (status === "active" || status === "inactive") {
+		where.isDeleted = false;
+	}
 
 	if (role) {
 		where.role = role;
@@ -102,6 +112,13 @@ export const getUsersWithQuery = async ({
 export const getUserById = async (id) => {
 	return prisma.user.findFirst({
 		where: { id, isDeleted: false },
+		select: USER_SELECT,
+	});
+};
+
+export const getUserByIdAnyState = async (id) => {
+	return prisma.user.findUnique({
+		where: { id },
 		select: USER_SELECT,
 	});
 };
