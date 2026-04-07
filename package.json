@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "start": "node -r dotenv/config server.js",
+    "build": "npx prisma generate"
   },
   "keywords": [],
   "author": "",
@@ -19,11 +21,11 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
-    "postgres": "^3.4.8"
+    "postgres": "^3.4.8",
+    "@prisma/client": "^7.5.0",
+    "prisma": "^7.5.0"
   },
   "devDependencies": {
-    "@prisma/client": "^7.5.0",
-    "nodemon": "^3.1.14",
-    "prisma": "^7.5.0"
+    "nodemon": "^3.1.14"
   }
 }
