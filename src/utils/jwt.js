@@ -29,13 +29,13 @@ export const createRefreshToken = () => {
 export const getAccessCookieOptions = () => ({
 	httpOnly: true,
 	secure: process.env.NODE_ENV === "production",
-	sameSite: "lax",
+	sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
 	maxAge: ACCESS_TOKEN_EXPIRES_MINUTES * 60 * 1000,
 });
 
 export const getRefreshCookieOptions = () => ({
 	httpOnly: true,
 	secure: process.env.NODE_ENV === "production",
-	sameSite: "lax",
+	sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
 	maxAge: REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000,
 });
