@@ -1,15 +1,262 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+model User {
+  id                         Int                      @id @default(autoincrement())
+  name                       String
+  email                      String                   @unique
+  createdAt                  DateTime                 @default(now())
+  isActive                   Boolean                  @default(true)
+  passwordHash               String
+  role                       UserRole
+  updatedAt                  DateTime                 @default(now()) @updatedAt
+  employeeId                 String
+  deactivatedAt              DateTime?
+  deletedAt                  DateTime?
+  isDeleted                  Boolean                  @default(false)
+  refreshToken               String?
+  refreshTokenExpiresAt      DateTime?
+  auditActions               UserAudit[]              @relation("UserAuditActor")
+  auditLogs                  UserAudit[]              @relation("UserAuditTarget")
+  createdPermissionOverrides UserPermissionOverride[] @relation("UserPermissionOverrideCreator")
+  revokedPermissionOverrides UserPermissionOverride[] @relation("UserPermissionOverrideRevoker")
+  permissionOverrides        UserPermissionOverride[] @relation("UserPermissionOverrideTarget")
+
+  @@map("users")
+}
+
+model UserPermissionOverride {
+  id          Int                      @id @default(autoincrement())
+  userId      Int
+  permission  String
+  effect      PermissionOverrideEffect
+  expiresAt   DateTime?
+  reason      String?
+  createdById Int
+  createdAt   DateTime                 @default(now())
+  revokedById Int?
+  revokedAt   DateTime?
+  createdBy   User                     @relation("UserPermissionOverrideCreator", fields: [createdById], references: [id])
+  revokedBy   User?                    @relation("UserPermissionOverrideRevoker", fields: [revokedById], references: [id])
+  user        User                     @relation("UserPermissionOverrideTarget", fields: [userId], references: [id])
+
+  @@index([userId, permission, revokedAt])
+  @@index([userId, revokedAt, expiresAt])
+  @@index([createdById, createdAt])
+  @@map("user_permission_overrides")
+}
+
+model UserAudit {
+  id          Int             @id @default(autoincrement())
+  userId      Int
+  actorUserId Int?
+  action      UserAuditAction
+  details     Json?
+  createdAt   DateTime        @default(now())
+  actor       User?           @relation("UserAuditActor", fields: [actorUserId], references: [id])
+  user        User            @relation("UserAuditTarget", fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("user_audits")
+}
+
+model Product {
+  id                    Int                    @id @default(autoincrement())
+  name                  String
+  category              ProductCategory
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @default(now()) @updatedAt
+  description           String?
+  restockLevel          Int                    @default(0)
+  deletedAt             DateTime?
+  isDeleted             Boolean                @default(false)
+  boms                  BOM[]
+  bomItems              BOMItem[]              @relation("RawMaterialRelation")
+  inventory             Inventory?
+  inventoryTransactions InventoryTransaction[]
+  productions           Production[]
+  purchaseItems         PurchaseItem[]
+  saleItems             SaleItem[]
+
+  @@map("products")
+}
+
+model Inventory {
+  id            Int      @id @default(autoincrement())
+  productId     Int      @unique
+  stockQuantity Int      @default(0)
+  reorderLevel  Int      @default(0)
+  updatedAt     DateTime @default(now()) @updatedAt
+  avgCost       Float    @default(0)
+  stockValue    Float    @default(0)
+  product       Product  @relation(fields: [productId], references: [id])
+
+  @@map("inventory")
+}
+
+model Customer {
+  id        Int       @id @default(autoincrement())
+  name      String
+  email     String?   @unique
+  address   String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
+  phone     String
+  deletedAt DateTime?
+  isDeleted Boolean   @default(false)
+  sales     Sale[]
+
+  @@map("customers")
+}
+
+model Vendor {
+  id        Int        @id @default(autoincrement())
+  name      String
+  email     String?    @unique
+  phone     String
+  address   String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @default(now()) @updatedAt
+  deletedAt DateTime?
+  isDeleted Boolean    @default(false)
+  purchases Purchase[]
+
+  @@map("vendors")
+}
+
+model Purchase {
+  id            Int            @id @default(autoincrement())
+  vendorId      Int
+  totalAmount   Float
+  purchaseDate  DateTime       @default(now())
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @default(now()) @updatedAt
+  paymentStatus String
+  items         PurchaseItem[]
+  vendor        Vendor         @relation(fields: [vendorId], references: [id])
+
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id         Int      @id @default(autoincrement())
+  purchaseId Int
+  productId  Int
+  quantity   Int
+  price      Float
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+  product    Product  @relation(fields: [productId], references: [id])
+  purchase   Purchase @relation(fields: [purchaseId], references: [id])
+
+  @@map("purchase_items")
+}
+
+model Sale {
+  id          Int        @id @default(autoincrement())
+  customerId  Int
+  totalAmount Float
+  saleDate    DateTime   @default(now())
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @default(now()) @updatedAt
+  grossProfit Float
+  grossSales  Float
+  totalCogs   Float
+  customer    Customer   @relation(fields: [customerId], references: [id])
+  items       SaleItem[]
+
+  @@map("sales")
+}
+
+model SaleItem {
+  id               Int      @id @default(autoincrement())
+  saleId           Int
+  productId        Int
+  quantity         Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @default(now()) @updatedAt
+  profit           Float
+  unitCost         Float
+  unitSellingPrice Float
+  product          Product  @relation(fields: [productId], references: [id])
+  sale             Sale     @relation(fields: [saleId], references: [id])
+
+  @@map("sales_items")
+}
+
+model BOM {
+  id        Int       @id @default(autoincrement())
+  productId Int
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
+  product   Product   @relation(fields: [productId], references: [id])
+  items     BOMItem[]
+
+  @@map("bom")
+}
+
+model BOMItem {
+  id            Int      @id @default(autoincrement())
+  bomId         Int
+  rawMaterialId Int
+  quantity      Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
+  bom           BOM      @relation(fields: [bomId], references: [id])
+  rawMaterial   Product  @relation("RawMaterialRelation", fields: [rawMaterialId], references: [id])
+
+  @@map("bom_items")
+}
+
+model Production {
+  id             Int      @id @default(autoincrement())
+  productId      Int
+  quantity       Int
+  productionDate DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
+  totalCost      Float    @default(0)
+  unitCost       Float    @default(0)
+  product        Product  @relation(fields: [productId], references: [id])
+
+  @@map("production")
+}
+
+model Expense {
+  id          Int      @id @default(autoincrement())
+  description String
+  amount      Float
+  expenseDate DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@map("expenses")
+}
+
+model InventoryTransaction {
+  id                Int      @id @default(autoincrement())
+  productId         Int
+  transactionType   String
+  quantity          Int
+  transactionDate   DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now()) @updatedAt
+  reason            String?
+  referenceId       String?
+  stockAfter        Int      @default(0)
+  stockAvgCostAfter Float    @default(0)
+  stockValueAfter   Float    @default(0)
+  totalValue        Float    @default(0)
+  unitCost          Float    @default(0)
+  product           Product  @relation(fields: [productId], references: [id])
+
+  @@map("inventory_transactions")
 }
 
 enum UserRole {
@@ -30,253 +277,18 @@ enum UserAuditAction {
   USER_DELETED
   PROFILE_UPDATED
   PASSWORD_CHANGED
+  PERMISSION_GRANTED
+  PERMISSION_DENIED
+  PERMISSION_REVOKED
 }
 
-model User {
-  id           Int      @id @default(autoincrement())
-  employeeId   String
-  name         String
-  email        String   @unique
-  passwordHash String
-  role         UserRole
-  isActive     Boolean  @default(true)
-  isDeleted    Boolean  @default(false)
-  deactivatedAt DateTime?
-  deletedAt    DateTime?
-  refreshToken String?
-  refreshTokenExpiresAt DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @default(now()) @updatedAt
-
-  auditLogs    UserAudit[] @relation("UserAuditTarget")
-  auditActions UserAudit[] @relation("UserAuditActor")
-
-  @@map("users")
-}
-
-model UserAudit {
-  id          Int             @id @default(autoincrement())
-  userId      Int
-  actorUserId Int?
-  action      UserAuditAction
-  details     Json?
-  createdAt   DateTime        @default(now())
-
-  user  User  @relation("UserAuditTarget", fields: [userId], references: [id])
-  actor User? @relation("UserAuditActor", fields: [actorUserId], references: [id])
-
-  @@index([userId, createdAt])
-  @@index([actorUserId, createdAt])
-  @@map("user_audits")
+enum PermissionOverrideEffect {
+  GRANT
+  DENY
 }
 
 enum ProductCategory {
   raw
   wip
   finished
-}
-
-model Product {
-  id           Int             @id @default(autoincrement())
-  name         String
-  description  String?
-  category     ProductCategory
-  restockLevel Int             @default(0)
-  isDeleted    Boolean         @default(false)
-  deletedAt    DateTime?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @default(now()) @updatedAt
-
-  purchaseItems         PurchaseItem[]
-  saleItems             SaleItem[]
-  boms                  BOM[]
-  bomItems              BOMItem[]              @relation("RawMaterialRelation")
-  productions           Production[]
-  inventoryTransactions InventoryTransaction[]
-  inventory             Inventory?
-
-  @@map("products")
-}
-
-model Inventory {
-  id            Int      @id @default(autoincrement())
-  productId     Int      @unique
-  stockQuantity Int      @default(0)
-  reorderLevel  Int      @default(0)
-  avgCost       Float    @default(0)
-  stockValue    Float    @default(0)
-  updatedAt     DateTime @default(now()) @updatedAt
-
-  product Product @relation(fields: [productId], references: [id])
-
-  @@map("inventory")
-}
-
-model Customer {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String?  @unique
-  phone     String
-  address   String?
-  isDeleted Boolean  @default(false)
-  deletedAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
-
-  sales Sale[]
-
-  @@map("customers")
-}
-
-model Vendor {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String?  @unique
-  phone     String
-  address   String?
-  isDeleted Boolean  @default(false)
-  deletedAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
-
-  purchases Purchase[]
-
-  @@map("vendors")
-}
-
-model Purchase {
-  id            Int      @id @default(autoincrement())
-  vendorId      Int
-  totalAmount   Float
-  purchaseDate  DateTime @default(now())
-  paymentStatus String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @default(now()) @updatedAt
-
-  vendor Vendor         @relation(fields: [vendorId], references: [id])
-  items  PurchaseItem[]
-
-  @@map("purchases")
-}
-
-model PurchaseItem {
-  id         Int      @id @default(autoincrement())
-  purchaseId Int
-  productId  Int
-  quantity   Int
-  price      Float
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @default(now()) @updatedAt
-
-  purchase Purchase @relation(fields: [purchaseId], references: [id])
-  product  Product  @relation(fields: [productId], references: [id])
-
-  @@map("purchase_items")
-}
-
-model Sale {
-  id           Int      @id @default(autoincrement())
-  customerId   Int
-  totalAmount  Float
-  grossSales   Float
-  totalCogs    Float
-  grossProfit  Float
-  saleDate     DateTime @default(now())
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @default(now()) @updatedAt
-
-  customer Customer   @relation(fields: [customerId], references: [id])
-  items    SaleItem[]
-
-  @@map("sales")
-}
-
-model SaleItem {
-  id           Int      @id @default(autoincrement())
-  saleId       Int
-  productId    Int
-  quantity     Int
-  unitSellingPrice Float
-  unitCost      Float
-  profit    Float
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @default(now()) @updatedAt
-
-  sale    Sale    @relation(fields: [saleId], references: [id])
-  product Product @relation(fields: [productId], references: [id])
-
-  @@map("sales_items")
-}
-
-model BOM {
-  id        Int      @id @default(autoincrement())
-  productId Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
-
-  product Product   @relation(fields: [productId], references: [id])
-  items   BOMItem[]
-
-  @@map("bom")
-}
-
-model BOMItem {
-  id            Int      @id @default(autoincrement())
-  bomId         Int
-  rawMaterialId Int
-  quantity      Int
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @default(now()) @updatedAt
-
-  bom         BOM     @relation(fields: [bomId], references: [id])
-  rawMaterial Product @relation(fields: [rawMaterialId], references: [id], name: "RawMaterialRelation")
-
-  @@map("bom_items")
-}
-
-model Production {
-  id             Int      @id @default(autoincrement())
-  productId      Int
-  quantity       Int
-  unitCost       Float    @default(0)
-  totalCost      Float    @default(0)
-  productionDate DateTime @default(now())
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @default(now()) @updatedAt
-
-  product Product @relation(fields: [productId], references: [id])
-
-  @@map("production")
-}
-
-model Expense {
-  id          Int      @id @default(autoincrement())
-  description String
-  amount      Float
-  expenseDate DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
-
-  @@map("expenses")
-}
-
-model InventoryTransaction {
-  id              Int      @id @default(autoincrement())
-  productId       Int
-  transactionType String
-  quantity        Int
-  unitCost        Float    @default(0)
-  totalValue      Float    @default(0)
-  stockAfter      Int      @default(0)
-  stockValueAfter Float    @default(0)
-  stockAvgCostAfter Float  @default(0)
-  referenceId     String?
-  reason          String?
-  transactionDate DateTime @default(now())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @default(now()) @updatedAt
-
-  product Product @relation(fields: [productId], references: [id])
-
-  @@map("inventory_transactions")
 }

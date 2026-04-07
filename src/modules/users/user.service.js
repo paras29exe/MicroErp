@@ -1,4 +1,9 @@
 import prisma from "../../config/db.js";
+import {
+	computeEffectivePermissions,
+	getRoleDefaultPermissions,
+	listPermissionCatalog,
+} from "../../middleware/role.middleware.js";
 
 const USER_SELECT = {
 	id: true,
@@ -221,5 +226,159 @@ export const getUserAuditLogs = async (userId, { page = 1, pageSize = 20 } = {})
 			total,
 			totalPages: Math.max(1, Math.ceil(total / safePageSize)),
 		},
+	};
+};
+
+export const getUserPermissionOverrides = async (
+	userId,
+	{ includeRevoked = false, includeExpired = false } = {},
+) => {
+	return prisma.userPermissionOverride.findMany({
+		where: {
+			userId,
+			...(includeRevoked ? {} : { revokedAt: null }),
+			...(includeExpired
+				? {}
+				: {
+					OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+				}),
+		},
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+		select: {
+			id: true,
+			permission: true,
+			effect: true,
+			expiresAt: true,
+			reason: true,
+			createdAt: true,
+			revokedAt: true,
+			createdBy: {
+				select: {
+					id: true,
+					name: true,
+					email: true,
+					employeeId: true,
+					role: true,
+				},
+			},
+			revokedBy: {
+				select: {
+					id: true,
+					name: true,
+					email: true,
+					employeeId: true,
+					role: true,
+				},
+			},
+		},
+	});
+};
+
+export const findActivePermissionOverride = async ({
+	userId,
+	permission,
+	effect,
+}) => {
+	return prisma.userPermissionOverride.findFirst({
+		where: {
+			userId,
+			permission,
+			effect,
+			revokedAt: null,
+			OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+		},
+		select: { id: true },
+	});
+};
+
+export const createPermissionOverride = async ({
+	userId,
+	permission,
+	effect,
+	expiresAt,
+	reason,
+	createdById,
+}) => {
+	return prisma.userPermissionOverride.create({
+		data: {
+			userId,
+			permission,
+			effect,
+			expiresAt: expiresAt ?? null,
+			reason: reason ?? null,
+			createdById,
+		},
+		select: {
+			id: true,
+			userId: true,
+			permission: true,
+			effect: true,
+			expiresAt: true,
+			reason: true,
+			createdById: true,
+			createdAt: true,
+			revokedById: true,
+			revokedAt: true,
+		},
+	});
+};
+
+export const revokePermissionOverride = async ({
+	userId,
+	overrideId,
+	revokedById,
+}) => {
+	return prisma.userPermissionOverride.updateMany({
+		where: {
+			id: overrideId,
+			userId,
+			revokedAt: null,
+		},
+		data: {
+			revokedAt: new Date(),
+			revokedById,
+		},
+	});
+};
+
+export const getEffectivePermissionsByUserId = async (userId) => {
+	const user = await prisma.user.findFirst({
+		where: { id: userId, isDeleted: false },
+		select: {
+			id: true,
+			role: true,
+			permissionOverrides: {
+				where: {
+					revokedAt: null,
+					OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+				},
+				orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+				select: {
+					id: true,
+					permission: true,
+					effect: true,
+					expiresAt: true,
+					reason: true,
+					createdAt: true,
+				},
+			},
+		},
+	});
+
+	if (!user) return null;
+
+	const defaultPermissions = getRoleDefaultPermissions(user.role);
+	const effectivePermissions = computeEffectivePermissions({
+		role: user.role,
+		overrides: user.permissionOverrides,
+	});
+
+	return {
+		userId: user.id,
+		role: user.role,
+		permissionCatalog: listPermissionCatalog(),
+		defaultPermissions,
+		overrides: user.permissionOverrides,
+		effectivePermissions,
 	};
 };

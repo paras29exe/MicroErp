@@ -1,4 +1,5 @@
 import { ApiError } from "../utils/response.js";
+import prisma from "../config/db.js";
 
 const ROLE_PERMISSIONS = {
 	ADMIN: ["*"],
@@ -56,6 +57,58 @@ const ROLE_PERMISSIONS = {
 	],
 };
 
+const PERMISSION_CATALOG = [
+	"master:create",
+	"master:read",
+	"master:update",
+	"master:delete",
+	"sales:create",
+	"sales:read",
+	"sales:update",
+	"sales:delete",
+	"purchase:create",
+	"purchase:read",
+	"purchase:update",
+	"purchase:delete",
+	"inventory:read",
+	"inventory:update",
+	"production:create",
+	"production:read",
+	"production:update",
+	"production:delete",
+	"dashboard:read",
+	"expense:create",
+	"expense:read",
+];
+
+export const listPermissionCatalog = () => PERMISSION_CATALOG;
+
+export const isValidPermission = (permission) =>
+	typeof permission === "string" && PERMISSION_CATALOG.includes(permission);
+
+export const getRoleDefaultPermissions = (role) => ROLE_PERMISSIONS[role] || [];
+
+export const computeEffectivePermissions = ({ role, overrides = [] }) => {
+	const roleDefaults = getRoleDefaultPermissions(role);
+
+	const base = new Set(roleDefaults.includes("*") ? PERMISSION_CATALOG : roleDefaults);
+
+	for (const override of overrides) {
+		if (!isValidPermission(override.permission)) continue;
+
+		if (override.effect === "DENY") {
+			base.delete(override.permission);
+			continue;
+		}
+
+		if (override.effect === "GRANT") {
+			base.add(override.permission);
+		}
+	}
+
+	return Array.from(base).sort();
+};
+
 export const authorizeRoles = (...roles) => {
 	return (req, res, next) => {
 		if (!req.user) {
@@ -71,19 +124,49 @@ export const authorizeRoles = (...roles) => {
 };
 
 export const authorizePermission = (permission) => {
-	return (req, res, next) => {
+	return async (req, res, next) => {
 		if (!req.user) {
 			return next(new ApiError(401, "Authentication required"));
 		}
 
-		const rolePermissions = ROLE_PERMISSIONS[req.user.role] || [];
-		const isAllowed = rolePermissions.includes("*") || rolePermissions.includes(permission);
-
-		if (!isAllowed) {
-			return next(new ApiError(403, "Access denied"));
+		if (!isValidPermission(permission)) {
+			return next(new ApiError(500, `Unknown permission key: ${permission}`));
 		}
 
-		return next();
+		try {
+			const activeOverrides = await prisma.userPermissionOverride.findMany({
+				where: {
+					userId: req.user.id,
+					permission,
+					revokedAt: null,
+					OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+				},
+				select: {
+					effect: true,
+				},
+			});
+
+			const hasDenyOverride = activeOverrides.some((override) => override.effect === "DENY");
+			if (hasDenyOverride) {
+				return next(new ApiError(403, "Access denied"));
+			}
+
+			const rolePermissions = ROLE_PERMISSIONS[req.user.role] || [];
+			const allowedByRole = rolePermissions.includes("*") || rolePermissions.includes(permission);
+
+			if (allowedByRole) {
+				return next();
+			}
+
+			const hasGrantOverride = activeOverrides.some((override) => override.effect === "GRANT");
+			if (hasGrantOverride) {
+				return next();
+			}
+
+			return next(new ApiError(403, "Access denied"));
+		} catch (err) {
+			return next(err);
+		}
 	};
 };
 

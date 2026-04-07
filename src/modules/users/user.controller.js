@@ -12,13 +12,21 @@ import {
 	getUserAuthById as getUserAuthByIdService,
 	createUserAuditLog as createUserAuditLogService,
 	getUserAuditLogs as getUserAuditLogsService,
+	getUserPermissionOverrides as getUserPermissionOverridesService,
+	findActivePermissionOverride as findActivePermissionOverrideService,
+	createPermissionOverride as createPermissionOverrideService,
+	revokePermissionOverride as revokePermissionOverrideService,
+	getEffectivePermissionsByUserId as getEffectivePermissionsByUserIdService,
 } from "./user.service.js";
 import prisma from "../../config/db.js";
 import {
 	VALID_ROLES,
 	isValidRole,
 	validatePasswordStrength,
+	isValidOverrideEffect,
+	parseOptionalFutureDate,
 } from "./user.validation.js";
+import { isValidPermission } from "../../middleware/role.middleware.js";
 
 function parsePositiveInt(value, fallback) {
 	const parsed = Number.parseInt(value, 10);
@@ -479,6 +487,181 @@ export const getUserAuditLogs = async (req, res, next) => {
 		return res
 			.status(200)
 			.json(new ApiResponse(200, "User audit logs retrieved successfully", data));
+	} catch (err) {
+		next(err);
+	}
+};
+
+export const getUserOverrides = async (req, res, next) => {
+	try {
+		const id = parseInt(req.params.id, 10);
+		if (Number.isNaN(id)) throw new ApiError(400, "Invalid user ID");
+
+		const includeRevoked = req.query.includeRevoked === "true";
+		const includeExpired = req.query.includeExpired === "true";
+		const user = await getUserByIdAnyStateService(id);
+		if (!user) throw new ApiError(404, "User not found");
+
+		const data = await getUserPermissionOverridesService(id, {
+			includeRevoked,
+			includeExpired,
+		});
+
+		return res
+			.status(200)
+			.json(new ApiResponse(200, "User permission overrides retrieved successfully", data));
+	} catch (err) {
+		next(err);
+	}
+};
+
+export const createUserOverride = async (req, res, next) => {
+	try {
+		const id = parseInt(req.params.id, 10);
+		if (Number.isNaN(id)) throw new ApiError(400, "Invalid user ID");
+
+		const { permission, effect, expiresAt, reason } = req.body;
+
+		if (!isValidPermission(permission)) {
+			throw new ApiError(400, "Invalid permission key");
+		}
+
+		if (!isValidOverrideEffect(effect)) {
+			throw new ApiError(400, "effect must be one of: GRANT, DENY");
+		}
+
+		const parsedExpiresAt = parseOptionalFutureDate(expiresAt);
+		if (parsedExpiresAt?.error) {
+			throw new ApiError(400, parsedExpiresAt.error);
+		}
+
+		const targetUser = await getUserByIdAnyStateService(id);
+		if (!targetUser) throw new ApiError(404, "User not found");
+
+		const existingActive = await findActivePermissionOverrideService({
+			userId: id,
+			permission,
+			effect,
+		});
+
+		if (existingActive) {
+			throw new ApiError(409, "Active override already exists for this permission and effect");
+		}
+
+		const created = await createPermissionOverrideService({
+			userId: id,
+			permission,
+			effect,
+			expiresAt: parsedExpiresAt?.value ?? null,
+			reason: typeof reason === "string" && reason.trim() ? reason.trim() : null,
+			createdById: req.user.id,
+		});
+
+		await createUserAuditLogService({
+			userId: id,
+			actorUserId: req.user?.id,
+			action: effect === "GRANT" ? "PERMISSION_GRANTED" : "PERMISSION_DENIED",
+			details: {
+				overrideId: created.id,
+				permission,
+				effect,
+				expiresAt: created.expiresAt,
+				reason: created.reason,
+			},
+		});
+
+		return res
+			.status(201)
+			.json(new ApiResponse(201, "User permission override created successfully", created));
+	} catch (err) {
+		next(err);
+	}
+};
+
+export const revokeUserOverride = async (req, res, next) => {
+	try {
+		const id = parseInt(req.params.id, 10);
+		const overrideId = parseInt(req.params.overrideId, 10);
+		if (Number.isNaN(id)) throw new ApiError(400, "Invalid user ID");
+		if (Number.isNaN(overrideId)) throw new ApiError(400, "Invalid override ID");
+
+		const targetUser = await getUserByIdAnyStateService(id);
+		if (!targetUser) throw new ApiError(404, "User not found");
+
+		const existingOverride = await prisma.userPermissionOverride.findFirst({
+			where: {
+				id: overrideId,
+				userId: id,
+				revokedAt: null,
+			},
+			select: {
+				id: true,
+				permission: true,
+				effect: true,
+				expiresAt: true,
+				reason: true,
+			},
+		});
+
+		if (!existingOverride) {
+			throw new ApiError(404, "Active override not found");
+		}
+
+		const result = await revokePermissionOverrideService({
+			userId: id,
+			overrideId,
+			revokedById: req.user.id,
+		});
+
+		if (result.count === 0) {
+			throw new ApiError(404, "Active override not found");
+		}
+
+		await createUserAuditLogService({
+			userId: id,
+			actorUserId: req.user?.id,
+			action: "PERMISSION_REVOKED",
+			details: {
+				overrideId,
+				permission: existingOverride.permission,
+				effect: existingOverride.effect,
+				expiresAt: existingOverride.expiresAt,
+				reason: existingOverride.reason,
+			},
+		});
+
+		return res
+			.status(200)
+			.json(new ApiResponse(200, "User permission override revoked successfully", { overrideId }));
+	} catch (err) {
+		next(err);
+	}
+};
+
+export const getUserEffectivePermissions = async (req, res, next) => {
+	try {
+		const id = parseInt(req.params.id, 10);
+		if (Number.isNaN(id)) throw new ApiError(400, "Invalid user ID");
+
+		const data = await getEffectivePermissionsByUserIdService(id);
+		if (!data) throw new ApiError(404, "User not found");
+
+		return res
+			.status(200)
+			.json(new ApiResponse(200, "User effective permissions retrieved successfully", data));
+	} catch (err) {
+		next(err);
+	}
+};
+
+export const getMeEffectivePermissions = async (req, res, next) => {
+	try {
+		const data = await getEffectivePermissionsByUserIdService(req.user.id);
+		if (!data) throw new ApiError(404, "User not found");
+
+		return res
+			.status(200)
+			.json(new ApiResponse(200, "Effective permissions retrieved successfully", data));
 	} catch (err) {
 		next(err);
 	}

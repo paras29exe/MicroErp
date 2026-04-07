@@ -49,3 +49,24 @@ export function validatePasswordStrength(password) {
 
 	return { valid: true };
 }
+
+export const VALID_OVERRIDE_EFFECTS = ["GRANT", "DENY"];
+
+export function isValidOverrideEffect(value) {
+	return VALID_OVERRIDE_EFFECTS.includes(value);
+}
+
+export function parseOptionalFutureDate(value) {
+	if (value === undefined || value === null || value === "") return null;
+
+	const parsed = new Date(value);
+	if (Number.isNaN(parsed.getTime())) {
+		return { error: "expiresAt must be a valid date" };
+	}
+
+	if (parsed <= new Date()) {
+		return { error: "expiresAt must be in the future" };
+	}
+
+	return { value: parsed };
+}
